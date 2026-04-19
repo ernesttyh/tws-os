@@ -1,125 +1,123 @@
-import { createClient } from '@/lib/supabase/server'
-import Link from 'next/link'
+'use client';
+import { useState, useEffect } from 'react';
+import { createBrowserClient } from '@/lib/supabase/client';
+import { BarChart3, AlertTriangle, CheckCircle, Clock, TrendingUp } from 'lucide-react';
+import Link from 'next/link';
 
-export default async function DashboardPage() {
-  const supabase = await createClient()
-  
-  const { data: brands } = await supabase
-    .from('brands')
-    .select('*')
-    .eq('status', 'active')
-    .order('name')
+interface BrandSummary { id: string; name: string; slug: string; brand_group: string; tasks_total: number; tasks_overdue: number; content_count: number; meetings_this_month: number; active_ads: number; kol_count: number; health: number }
 
-  const { data: tasks } = await supabase
-    .from('tasks')
-    .select('id, brand_id, status')
-  
-  const { data: content } = await supabase
-    .from('content_items')
-    .select('id, brand_id, status')
+export default function DashboardPage() {
+  const [brands, setBrands] = useState<BrandSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const supabase = createBrowserClient();
 
-  const { data: meetings } = await supabase
-    .from('meeting_minutes')
-    .select('id, brand_id, meeting_date')
+  useEffect(() => {
+    async function load() {
+      const { data: brandList } = await supabase.from('brands').select('*').eq('status', 'active').order('name');
+      if (!brandList) { setLoading(false); return; }
 
-  const { data: shoots } = await supabase
-    .from('shoot_briefs')
-    .select('id, brand_id, shoot_date, status')
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
 
-  // Build stats per brand
-  const brandStats = (brands || []).map(brand => {
-    const brandTasks = (tasks || []).filter(t => t.brand_id === brand.id)
-    const brandContent = (content || []).filter(c => c.brand_id === brand.id)
-    const brandMeetings = (meetings || []).filter(m => m.brand_id === brand.id)
-    const brandShoots = (shoots || []).filter(s => s.brand_id === brand.id)
-    
-    const activeTasks = brandTasks.filter(t => !['done', 'archived'].includes(t.status)).length
-    const totalContent = brandContent.length
-    const postedContent = brandContent.filter(c => c.status === 'posted').length
-    const meetingCount = brandMeetings.length
-    const shootCount = brandShoots.filter(s => s.status !== 'cancelled').length
+      const summaries: BrandSummary[] = await Promise.all(brandList.map(async (b) => {
+        const [tasks, content, meetings, ads, kol] = await Promise.all([
+          supabase.from('tasks').select('id,status,due_date').eq('brand_id', b.id),
+          supabase.from('content_items').select('id').eq('brand_id', b.id),
+          supabase.from('meeting_minutes').select('id').eq('brand_id', b.id).gte('meeting_date', monthStart),
+          supabase.from('ad_campaigns').select('id').eq('brand_id', b.id).eq('status', 'active'),
+          supabase.from('brand_influencer_campaigns').select('id').eq('brand_id', b.id),
+        ]);
 
-    return { brand, activeTasks, totalContent, postedContent, meetingCount, shootCount }
-  })
+        const taskList = tasks.data || [];
+        const overdue = taskList.filter(t => t.due_date && new Date(t.due_date) < now && t.status !== 'done' && t.status !== 'archived').length;
+        const health = Math.min(100, Math.round(
+          (overdue === 0 ? 25 : Math.max(0, 25 - overdue * 5)) +
+          ((meetings.data || []).length >= 1 ? 25 : 0) +
+          ((content.data || []).length > 0 ? 25 : 10) +
+          ((ads.data || []).length > 0 || (kol.data || []).length > 0 ? 25 : 10)
+        ));
+
+        return {
+          id: b.id, name: b.name, slug: b.slug, brand_group: b.brand_group,
+          tasks_total: taskList.length, tasks_overdue: overdue,
+          content_count: (content.data || []).length,
+          meetings_this_month: (meetings.data || []).length,
+          active_ads: (ads.data || []).length,
+          kol_count: (kol.data || []).length,
+          health,
+        };
+      }));
+
+      setBrands(summaries.sort((a, b) => a.health - b.health));
+      setLoading(false);
+    }
+    load();
+  }, [supabase]);
+
+  const healthColor = (h: number) => h >= 80 ? 'text-green-400' : h >= 50 ? 'text-yellow-400' : 'text-red-400';
+  const healthBg = (h: number) => h >= 80 ? 'bg-green-500' : h >= 50 ? 'bg-yellow-500' : 'bg-red-500';
+
+  const totalBrands = brands.length;
+  const needsAttention = brands.filter(b => b.health < 50).length;
+  const totalOverdue = brands.reduce((s, b) => s + b.tasks_overdue, 0);
+
+  if (loading) return <div className="p-6"><div className="animate-pulse space-y-4"><div className="h-24 bg-white/5 rounded-xl" /><div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div></div></div>;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            {brands?.length || 0} active brands
-          </p>
-        </div>
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+        <p className="text-gray-400 text-sm">Account overview across all brands</p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        <div className="card">
-          <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Active Brands</div>
-          <div className="text-2xl font-bold mt-1">{brands?.length || 0}</div>
-        </div>
-        <div className="card">
-          <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Open Tasks</div>
-          <div className="text-2xl font-bold mt-1">{(tasks || []).filter(t => !['done','archived'].includes(t.status)).length}</div>
-        </div>
-        <div className="card">
-          <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Content Items</div>
-          <div className="text-2xl font-bold mt-1">{content?.length || 0}</div>
-        </div>
-        <div className="card">
-          <div className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Shoots Planned</div>
-          <div className="text-2xl font-bold mt-1">{(shoots || []).filter(s => s.status === 'planned').length}</div>
-        </div>
+      {/* Global Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Active Brands</div><div className="text-3xl font-bold text-white">{totalBrands}</div></div>
+        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Needs Attention</div><div className={`text-3xl font-bold ${needsAttention > 0 ? 'text-red-400' : 'text-green-400'}`}>{needsAttention}</div></div>
+        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Overdue Tasks</div><div className={`text-3xl font-bold ${totalOverdue > 0 ? 'text-red-400' : 'text-green-400'}`}>{totalOverdue}</div></div>
+        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Avg Health</div><div className={`text-3xl font-bold ${healthColor(brands.reduce((s, b) => s + b.health, 0) / (brands.length || 1))}`}>{Math.round(brands.reduce((s, b) => s + b.health, 0) / (brands.length || 1))}</div></div>
       </div>
 
-      {/* Brand health table */}
-      <div className="card p-0 overflow-hidden">
-        <div className="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Brand</th>
-                <th>Group</th>
-                <th>Tasks</th>
-                <th>Content</th>
-                <th>Meetings</th>
-                <th>Shoots</th>
-                <th></th>
+      {/* Brand Table */}
+      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-white/10">
+            <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Brand</th>
+            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Health</th>
+            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Tasks</th>
+            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Content</th>
+            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Meetings</th>
+            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Ads</th>
+            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">KOLs</th>
+          </tr></thead>
+          <tbody>
+            {brands.map(b => (
+              <tr key={b.id} className="border-b border-white/5 hover:bg-white/5 transition">
+                <td className="py-3 px-4">
+                  <Link href={`/dashboard/brand/${b.slug}`} className="text-white hover:text-purple-400 font-medium transition">{b.name}</Link>
+                  <div className="text-xs text-gray-500 capitalize">{b.brand_group?.replace('_', ' ')}</div>
+                </td>
+                <td className="py-3 px-4 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-16 h-2 bg-white/10 rounded-full overflow-hidden"><div className={`h-full rounded-full ${healthBg(b.health)}`} style={{ width: `${b.health}%` }} /></div>
+                    <span className={`text-xs font-semibold ${healthColor(b.health)}`}>{b.health}</span>
+                  </div>
+                </td>
+                <td className="py-3 px-4 text-center">
+                  <span className="text-gray-300">{b.tasks_total}</span>
+                  {b.tasks_overdue > 0 && <span className="text-red-400 text-xs ml-1">({b.tasks_overdue} ⚠️)</span>}
+                </td>
+                <td className="py-3 px-4 text-center text-gray-300">{b.content_count}</td>
+                <td className="py-3 px-4 text-center">
+                  <span className={b.meetings_this_month >= 1 ? 'text-green-400' : 'text-gray-500'}>{b.meetings_this_month}</span>
+                </td>
+                <td className="py-3 px-4 text-center text-gray-300">{b.active_ads}</td>
+                <td className="py-3 px-4 text-center text-gray-300">{b.kol_count}</td>
               </tr>
-            </thead>
-            <tbody>
-              {brandStats.map(({ brand, activeTasks, totalContent, postedContent, meetingCount, shootCount }) => (
-                <tr key={brand.id}>
-                  <td>
-                    <Link href={`/dashboard/brand/${brand.slug}`} className="font-medium hover:underline" style={{ color: 'var(--accent)' }}>
-                      {brand.name}
-                    </Link>
-                  </td>
-                  <td>
-                    <span className="badge badge-neutral">{brand.brand_group.replace('_', ' ')}</span>
-                  </td>
-                  <td>
-                    <span className={activeTasks > 0 ? 'font-medium' : ''} style={{ color: activeTasks > 5 ? 'var(--warning)' : 'var(--text-primary)' }}>
-                      {activeTasks}
-                    </span>
-                  </td>
-                  <td>
-                    <span>{postedContent}/{totalContent}</span>
-                  </td>
-                  <td>{meetingCount}</td>
-                  <td>{shootCount}</td>
-                  <td>
-                    <Link href={`/dashboard/brand/${brand.slug}`} className="btn btn-ghost btn-sm">
-                      View →
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
-  )
+  );
 }

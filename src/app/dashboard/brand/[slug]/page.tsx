@@ -1,83 +1,107 @@
-import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
-import Link from 'next/link'
+'use client';
+import { useState, useEffect, useCallback, use } from 'react';
+import { createBrowserClient } from '@/lib/supabase/client';
+import { BarChart3, FileText, CheckSquare, Camera, Users, Palette, Calendar, TrendingUp, AlertTriangle, Target } from 'lucide-react';
 
-export default async function BrandOverviewPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params
-  const supabase = await createClient()
-  
-  const { data: brand } = await supabase.from('brands').select('*').eq('slug', slug).single()
-  if (!brand) notFound()
+interface BrandStats { tasks: { total: number; done: number; overdue: number }; content: { total: number; posted: number }; meetings: number; shoots: number; influencers: number; ads: number; designs: number; events: number }
 
-  const { data: tasks } = await supabase.from('tasks').select('*').eq('brand_id', brand.id)
-  const { data: content } = await supabase.from('content_items').select('*').eq('brand_id', brand.id)
-  const { data: meetings } = await supabase.from('meeting_minutes').select('*').eq('brand_id', brand.id).order('meeting_date', { ascending: false }).limit(5)
-  const { data: shoots } = await supabase.from('shoot_briefs').select('*').eq('brand_id', brand.id).order('shoot_date', { ascending: false }).limit(5)
-  const { data: designs } = await supabase.from('design_briefs').select('*').eq('brand_id', brand.id)
+export default function BrandOverview({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+  const [brand, setBrand] = useState<{ id: string; name: string; brand_group: string } | null>(null);
+  const [stats, setStats] = useState<BrandStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const activeTasks = (tasks || []).filter(t => !['done','archived'].includes(t.status)).length
-  const postedContent = (content || []).filter(c => c.status === 'posted').length
-  const openDesigns = (designs || []).filter(d => d.status !== 'approved').length
+  const supabase = createBrowserClient();
+
+  const loadData = useCallback(async () => {
+    const { data: b } = await supabase.from('brands').select('*').eq('slug', slug).single();
+    if (!b) { setLoading(false); return; }
+    setBrand(b);
+
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+
+    const [tasks, content, meetings, shoots, influencers, ads, designs, events] = await Promise.all([
+      supabase.from('tasks').select('id,status,due_date').eq('brand_id', b.id),
+      supabase.from('content_items').select('id,status').eq('brand_id', b.id),
+      supabase.from('meeting_minutes').select('id').eq('brand_id', b.id).gte('meeting_date', monthStart),
+      supabase.from('shoot_briefs').select('id').eq('brand_id', b.id),
+      supabase.from('brand_influencer_campaigns').select('id').eq('brand_id', b.id),
+      supabase.from('ad_campaigns').select('id').eq('brand_id', b.id).eq('status', 'active'),
+      supabase.from('design_briefs').select('id').eq('brand_id', b.id),
+      supabase.from('calendar_events').select('id').eq('brand_id', b.id),
+    ]);
+
+    const taskList = tasks.data || [];
+    const overdue = taskList.filter(t => t.due_date && new Date(t.due_date) < now && t.status !== 'done' && t.status !== 'archived');
+
+    setStats({
+      tasks: { total: taskList.length, done: taskList.filter(t => t.status === 'done').length, overdue: overdue.length },
+      content: { total: (content.data || []).length, posted: (content.data || []).filter(c => c.status === 'posted').length },
+      meetings: (meetings.data || []).length,
+      shoots: (shoots.data || []).length,
+      influencers: (influencers.data || []).length,
+      ads: (ads.data || []).length,
+      designs: (designs.data || []).length,
+      events: (events.data || []).length,
+    });
+    setLoading(false);
+  }, [slug, supabase]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  if (loading || !stats) return <div className="p-6"><div className="animate-pulse space-y-4"><div className="h-32 bg-white/5 rounded-xl" /><div className="grid grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-24 bg-white/5 rounded-xl" />)}</div></div></div>;
+
+  const modules = [
+    { label: 'Tasks', icon: CheckSquare, value: `${stats.tasks.done}/${stats.tasks.total}`, sub: stats.tasks.overdue > 0 ? `${stats.tasks.overdue} overdue` : 'On track', color: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400', subColor: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400' },
+    { label: 'Content', icon: Target, value: stats.content.total, sub: `${stats.content.posted} posted`, color: 'text-blue-400', subColor: 'text-gray-400' },
+    { label: 'Meetings', icon: FileText, value: stats.meetings, sub: 'This month', color: stats.meetings >= 2 ? 'text-green-400' : 'text-yellow-400', subColor: 'text-gray-400' },
+    { label: 'Shoots', icon: Camera, value: stats.shoots, sub: 'Scheduled', color: 'text-orange-400', subColor: 'text-gray-400' },
+    { label: 'KOL Campaigns', icon: Users, value: stats.influencers, sub: 'Total', color: 'text-pink-400', subColor: 'text-gray-400' },
+    { label: 'Active Ads', icon: BarChart3, value: stats.ads, sub: 'Running', color: stats.ads > 0 ? 'text-green-400' : 'text-gray-400', subColor: 'text-gray-400' },
+    { label: 'Design Briefs', icon: Palette, value: stats.designs, sub: 'In pipeline', color: 'text-purple-400', subColor: 'text-gray-400' },
+    { label: 'Events', icon: Calendar, value: stats.events, sub: 'Scheduled', color: 'text-cyan-400', subColor: 'text-gray-400' },
+  ];
+
+  const healthScore = Math.min(100, Math.round(
+    (stats.tasks.overdue === 0 ? 20 : Math.max(0, 20 - stats.tasks.overdue * 5)) +
+    (stats.meetings >= 2 ? 20 : stats.meetings * 10) +
+    (stats.content.posted > 0 ? 20 : 0) +
+    (stats.ads > 0 ? 20 : 10) +
+    (stats.influencers > 0 ? 20 : 10)
+  ));
+
+  const healthColor = healthScore >= 80 ? 'text-green-400' : healthScore >= 50 ? 'text-yellow-400' : 'text-red-400';
 
   return (
-    <div className="space-y-6">
-      {/* Quick stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {[
-          { label: 'Active Tasks', value: activeTasks, color: activeTasks > 5 ? 'var(--warning)' : 'var(--text-primary)' },
-          { label: 'Content Items', value: content?.length || 0, color: 'var(--text-primary)' },
-          { label: 'Posted', value: postedContent, color: 'var(--success)' },
-          { label: 'Meetings', value: meetings?.length || 0, color: 'var(--text-primary)' },
-          { label: 'Open Designs', value: openDesigns, color: openDesigns > 0 ? 'var(--accent)' : 'var(--text-primary)' },
-        ].map(s => (
-          <div key={s.label} className="card">
-            <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{s.label}</div>
-            <div className="text-2xl font-bold mt-1" style={{ color: s.color }}>{s.value}</div>
+    <div className="p-6 space-y-6">
+      {/* Health Banner */}
+      <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-6 border border-white/10">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">{brand?.name}</h1>
+            <p className="text-sm text-gray-400 mt-1 capitalize">{brand?.brand_group?.replace('_', ' ')} group</p>
+          </div>
+          <div className="text-right">
+            <div className={`text-4xl font-bold ${healthColor}`}>{healthScore}</div>
+            <div className="text-xs text-gray-400">Health Score</div>
+          </div>
+        </div>
+        {stats.tasks.overdue > 0 && (
+          <div className="mt-4 flex items-center gap-2 text-sm text-red-400"><AlertTriangle size={16} />{stats.tasks.overdue} overdue task{stats.tasks.overdue > 1 ? 's' : ''} need attention</div>
+        )}
+      </div>
+
+      {/* Module Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {modules.map((m, i) => (
+          <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition">
+            <div className="flex items-center gap-2 text-gray-400 text-xs mb-2"><m.icon size={14} />{m.label}</div>
+            <div className={`text-2xl font-bold ${m.color}`}>{m.value}</div>
+            <div className={`text-xs mt-1 ${m.subColor}`}>{m.sub}</div>
           </div>
         ))}
       </div>
-
-      {/* Brand info */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card">
-          <h3 className="text-sm font-semibold mb-3">Brand Info</h3>
-          <div className="space-y-2 text-sm">
-            {brand.website_url && <div><span style={{ color: 'var(--text-secondary)' }}>Website:</span> <a href={brand.website_url} target="_blank" className="hover:underline" style={{ color: 'var(--accent)' }}>{brand.website_url}</a></div>}
-            {brand.instagram_handle && <div><span style={{ color: 'var(--text-secondary)' }}>Instagram:</span> @{brand.instagram_handle}</div>}
-            {brand.google_sheet_id && <div><span style={{ color: 'var(--text-secondary)' }}>Content Sheet:</span> <a href={`https://docs.google.com/spreadsheets/d/${brand.google_sheet_id}`} target="_blank" className="hover:underline" style={{ color: 'var(--accent)' }}>Open in Google Sheets ↗</a></div>}
-          </div>
-        </div>
-
-        <div className="card">
-          <h3 className="text-sm font-semibold mb-3">Recent Meetings</h3>
-          {meetings && meetings.length > 0 ? (
-            <div className="space-y-2">
-              {meetings.map(m => (
-                <div key={m.id} className="flex items-center justify-between text-sm">
-                  <span>{m.title}</span>
-                  <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {new Date(m.meeting_date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>No meetings logged yet</p>
-          )}
-        </div>
-      </div>
-
-      {/* Quick actions */}
-      <div className="card">
-        <h3 className="text-sm font-semibold mb-3">Quick Actions</h3>
-        <div className="flex flex-wrap gap-2">
-          <Link href={`/dashboard/brand/${slug}/operations`} className="btn btn-secondary btn-sm">+ Log Meeting</Link>
-          <Link href={`/dashboard/brand/${slug}/content`} className="btn btn-secondary btn-sm">+ Add Content</Link>
-          <Link href={`/dashboard/brand/${slug}/operations`} className="btn btn-secondary btn-sm">+ Create Task</Link>
-          <Link href={`/dashboard/brand/${slug}/design`} className="btn btn-secondary btn-sm">+ Design Brief</Link>
-          <Link href={`/dashboard/brand/${slug}/calendar`} className="btn btn-secondary btn-sm">+ Key Date</Link>
-        </div>
-      </div>
     </div>
-  )
+  );
 }

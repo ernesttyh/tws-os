@@ -1,132 +1,153 @@
-'use client'
+'use client';
+import { useState, useEffect, useCallback, use } from 'react';
+import { createBrowserClient } from '@/lib/supabase/client';
+import Modal from '@/components/ui/Modal';
+import FormField from '@/components/ui/FormField';
+import StatusBadge from '@/components/ui/StatusBadge';
+import EmptyState from '@/components/ui/EmptyState';
+import { BarChart3, Plus, TrendingUp, DollarSign, Eye, MousePointer } from 'lucide-react';
 
-import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import type { Brand } from '@/lib/types'
-import { Plus, X, TrendingUp, DollarSign } from 'lucide-react'
+interface Campaign { id: string; campaign_name: string; platform: string; status: string; objective: string | null; budget_daily: number | null; budget_total: number | null; start_date: string | null; end_date: string | null; notes: string | null }
+interface Metric { campaign_id: string; date: string; spend: number | null; impressions: number | null; clicks: number | null; ctr: number | null; cpc: number | null; reach: number | null; conversions: number | null; roas: number | null }
 
-export default function AdsPage() {
-  const params = useParams()
-  const slug = params.slug as string
-  const supabase = createClient()
+const PLATFORMS = [{ value: 'facebook', label: '📘 Meta (Facebook)' }, { value: 'instagram', label: '📸 Instagram' }, { value: 'google', label: '🔍 Google' }, { value: 'tiktok', label: '🎵 TikTok' }];
+const CAMPAIGN_STATUSES = [{ value: 'draft', label: 'Draft' }, { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'completed', label: 'Completed' }];
 
-  const [brand, setBrand] = useState<Brand | null>(null)
-  const [campaigns, setCampaigns] = useState<any[]>([])
-  const [showModal, setShowModal] = useState(false)
-  const [form, setForm] = useState({ campaign_name: '', platform: 'facebook', objective: '', budget_daily: '', budget_total: '', start_date: '', status: 'active', notes: '' })
+export default function AdsPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [filter, setFilter] = useState<string>('all');
 
-  useEffect(() => { loadData() }, [slug])
+  const supabase = createBrowserClient();
+  const loadBrand = useCallback(async () => { const { data } = await supabase.from('brands').select('id').eq('slug', slug).single(); if (data) { setBrandId(data.id); return data.id; } return null; }, [slug, supabase]);
+  const loadData = useCallback(async (bid: string) => { setLoading(true); const res = await fetch(`/api/brands/${bid}/ads`); if (res.ok) { const d = await res.json(); setCampaigns(d.campaigns || []); setMetrics(d.metrics || []); } setLoading(false); }, []);
+  useEffect(() => { loadBrand().then(bid => { if (bid) loadData(bid); }); }, [loadBrand, loadData]);
 
-  async function loadData() {
-    const { data: b } = await supabase.from('brands').select('*').eq('slug', slug).single()
-    if (!b) return
-    setBrand(b)
-    const { data } = await supabase.from('ad_campaigns').select('*').eq('brand_id', b.id).order('created_at', { ascending: false })
-    setCampaigns(data || [])
-  }
+  const [form, setForm] = useState({ campaign_name: '', platform: 'facebook', status: 'active', objective: '', budget_daily: '', budget_total: '', start_date: '', end_date: '', notes: '' });
+  const resetForm = () => setForm({ campaign_name: '', platform: 'facebook', status: 'active', objective: '', budget_daily: '', budget_total: '', start_date: '', end_date: '', notes: '' });
 
-  async function createCampaign(e: React.FormEvent) {
-    e.preventDefault()
-    if (!brand) return
-    await supabase.from('ad_campaigns').insert({
-      brand_id: brand.id, campaign_name: form.campaign_name, platform: form.platform,
-      objective: form.objective, budget_daily: form.budget_daily ? parseFloat(form.budget_daily) : null,
-      budget_total: form.budget_total ? parseFloat(form.budget_total) : null,
-      start_date: form.start_date || null, status: form.status, notes: form.notes,
-    })
-    setShowModal(false)
-    setForm({ campaign_name: '', platform: 'facebook', objective: '', budget_daily: '', budget_total: '', start_date: '', status: 'active', notes: '' })
-    loadData()
-  }
+  const save = async () => {
+    if (!brandId) return;
+    const payload = { ...form, budget_daily: form.budget_daily ? parseFloat(form.budget_daily) : null, budget_total: form.budget_total ? parseFloat(form.budget_total) : null, start_date: form.start_date || null, end_date: form.end_date || null, objective: form.objective || null, notes: form.notes || null };
+    await fetch(`/api/brands/${brandId}/ads`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    setShowModal(false); resetForm(); loadData(brandId);
+  };
 
-  async function deleteCampaign(id: string) {
-    await supabase.from('ad_campaigns').delete().eq('id', id)
-    loadData()
-  }
+  // Aggregate metrics
+  const totalSpend = metrics.reduce((s, m) => s + (m.spend || 0), 0);
+  const totalImpressions = metrics.reduce((s, m) => s + (m.impressions || 0), 0);
+  const totalClicks = metrics.reduce((s, m) => s + (m.clicks || 0), 0);
+  const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
 
-  const activeCampaigns = campaigns.filter(c => c.status === 'active')
-  const totalBudget = activeCampaigns.reduce((sum, c) => sum + (c.budget_total || 0), 0)
+  const filtered = filter === 'all' ? campaigns : campaigns.filter(c => c.platform === filter);
+  const activeCampaigns = campaigns.filter(c => c.status === 'active');
+
+  if (loading) return <div className="p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Ads Hub</h2>
-        <button onClick={() => setShowModal(true)} className="btn btn-primary btn-sm"><Plus size={14} /> Log Campaign</button>
+    <div className="p-6 space-y-6">
+      {/* Overview Stats */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: 'Total Spend', value: `$${totalSpend.toFixed(2)}`, icon: DollarSign, color: 'text-green-400' },
+          { label: 'Impressions', value: totalImpressions > 1000 ? `${(totalImpressions / 1000).toFixed(1)}K` : totalImpressions, icon: Eye, color: 'text-blue-400' },
+          { label: 'Clicks', value: totalClicks.toLocaleString(), icon: MousePointer, color: 'text-purple-400' },
+          { label: 'Avg CTR', value: `${avgCTR.toFixed(2)}%`, icon: TrendingUp, color: 'text-yellow-400' },
+        ].map((s, i) => (
+          <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10">
+            <div className="flex items-center gap-2 text-gray-400 text-xs mb-1"><s.icon size={14} />{s.label}</div>
+            <span className={`text-2xl font-bold ${s.color}`}>{s.value}</span>
+          </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="card"><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Active Campaigns</div><div className="text-2xl font-bold mt-1">{activeCampaigns.length}</div></div>
-        <div className="card"><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Total Budget</div><div className="text-2xl font-bold mt-1">${totalBudget.toLocaleString()}</div></div>
-        <div className="card"><div className="text-xs" style={{ color: 'var(--text-secondary)' }}>Platforms</div><div className="text-2xl font-bold mt-1">{new Set(campaigns.map(c => c.platform)).size}</div></div>
-      </div>
-
-      {campaigns.length === 0 ? (
-        <div className="card text-center py-12">
-          <TrendingUp size={32} className="mx-auto mb-3" style={{ color: 'var(--text-secondary)' }} />
-          <p style={{ color: 'var(--text-secondary)' }}>No ad campaigns logged yet</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {campaigns.map(c => (
-            <div key={c.id} className="card card-hover">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium">{c.campaign_name}</span>
-                    <span className="badge badge-purple text-xs">{c.platform}</span>
-                    <span className={`badge ${c.status === 'active' ? 'badge-success' : c.status === 'paused' ? 'badge-warning' : 'badge-neutral'} text-xs`}>{c.status}</span>
-                  </div>
-                  <div className="flex gap-4 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                    {c.objective && <span>Objective: {c.objective}</span>}
-                    {c.budget_daily && <span>Daily: ${c.budget_daily}</span>}
-                    {c.budget_total && <span>Total: ${c.budget_total}</span>}
-                    {c.start_date && <span>Started: {new Date(c.start_date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })}</span>}
-                  </div>
-                </div>
-                <button onClick={() => deleteCampaign(c.id)} className="btn btn-ghost btn-sm"><X size={14} /></button>
-              </div>
-            </div>
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          <button onClick={() => setFilter('all')} className={`px-3 py-1 text-xs rounded-full transition ${filter === 'all' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400'}`}>All</button>
+          {PLATFORMS.map(p => (
+            <button key={p.value} onClick={() => setFilter(p.value)} className={`px-3 py-1 text-xs rounded-full transition ${filter === p.value ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400'}`}>{p.label}</button>
           ))}
         </div>
-      )}
+        <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg"><Plus size={16} />Add Campaign</button>
+      </div>
 
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-semibold">Log Ad Campaign</h3>
-              <button onClick={() => setShowModal(false)} className="btn btn-ghost btn-sm"><X size={16} /></button>
-            </div>
-            <form onSubmit={createCampaign} className="space-y-4">
-              <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Campaign Name</label>
-                <input value={form.campaign_name} onChange={e => setForm(f => ({...f, campaign_name: e.target.value}))} required /></div>
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Platform</label>
-                  <select value={form.platform} onChange={e => setForm(f => ({...f, platform: e.target.value}))}>
-                    {['facebook','instagram','tiktok','google','other'].map(p => <option key={p} value={p}>{p}</option>)}
-                  </select></div>
-                <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Objective</label>
-                  <input value={form.objective} onChange={e => setForm(f => ({...f, objective: e.target.value}))} placeholder="e.g. Reach, Conversions" /></div>
+      {/* Active campaigns highlight */}
+      {activeCampaigns.length > 0 && (
+        <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-green-400 mb-2">🟢 Currently Running ({activeCampaigns.length})</h3>
+          <div className="space-y-2">
+            {activeCampaigns.map(c => (
+              <div key={c.id} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2"><span className="text-white">{c.campaign_name}</span><StatusBadge status={c.platform} /></div>
+                <div className="text-gray-400 text-xs">{c.budget_daily ? `$${c.budget_daily}/day` : ''} {c.budget_total ? `(Total: $${c.budget_total})` : ''}</div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Daily Budget</label>
-                  <input type="number" step="0.01" value={form.budget_daily} onChange={e => setForm(f => ({...f, budget_daily: e.target.value}))} placeholder="$" /></div>
-                <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Total Budget</label>
-                  <input type="number" step="0.01" value={form.budget_total} onChange={e => setForm(f => ({...f, budget_total: e.target.value}))} placeholder="$" /></div>
-                <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Start Date</label>
-                  <input type="date" value={form.start_date} onChange={e => setForm(f => ({...f, start_date: e.target.value}))} /></div>
-              </div>
-              <div><label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Notes</label>
-                <textarea rows={2} value={form.notes} onChange={e => setForm(f => ({...f, notes: e.target.value}))} /></div>
-              <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setShowModal(false)} className="btn btn-secondary btn-sm">Cancel</button>
-                <button type="submit" className="btn btn-primary btn-sm">Save Campaign</button>
-              </div>
-            </form>
+            ))}
           </div>
         </div>
       )}
+
+      {filtered.length === 0 ? (
+        <EmptyState icon={BarChart3} title="No ad campaigns" description="Add campaigns to track ad performance" action={{ label: 'Add Campaign', onClick: () => { resetForm(); setShowModal(true); } }} />
+      ) : (
+        <div className="space-y-3">
+          {filtered.map(c => {
+            const cMetrics = metrics.filter(m => m.campaign_id === c.id);
+            const cSpend = cMetrics.reduce((s, m) => s + (m.spend || 0), 0);
+            const cImpr = cMetrics.reduce((s, m) => s + (m.impressions || 0), 0);
+            const cClicks = cMetrics.reduce((s, m) => s + (m.clicks || 0), 0);
+            return (
+              <div key={c.id} className="bg-white/5 rounded-lg p-4 border border-white/10 hover:border-white/20 transition">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2"><h3 className="text-white font-medium">{c.campaign_name}</h3><StatusBadge status={c.status} /><StatusBadge status={c.platform} /></div>
+                    {c.objective && <p className="text-xs text-gray-400 mt-1">Objective: {c.objective}</p>}
+                    <div className="flex gap-4 mt-2 text-xs text-gray-400">
+                      {c.budget_daily && <span>💰 ${c.budget_daily}/day</span>}
+                      {c.budget_total && <span>📊 Total: ${c.budget_total}</span>}
+                      {c.start_date && <span>📅 {new Date(c.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{c.end_date ? ` - ${new Date(c.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ' - ongoing'}</span>}
+                    </div>
+                  </div>
+                  {cMetrics.length > 0 && (
+                    <div className="text-right text-xs">
+                      <div className="text-green-400 font-semibold">${cSpend.toFixed(2)} spent</div>
+                      <div className="text-gray-400">{cImpr.toLocaleString()} impressions</div>
+                      <div className="text-gray-400">{cClicks.toLocaleString()} clicks</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Ad Campaign" size="lg">
+        <div className="space-y-4">
+          <FormField label="Campaign Name" name="campaign_name" value={form.campaign_name} onChange={e => setForm(f => ({ ...f, campaign_name: e.target.value }))} required />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Platform" name="platform" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} options={PLATFORMS} />
+            <FormField label="Status" name="status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} options={CAMPAIGN_STATUSES} />
+          </div>
+          <FormField label="Objective" name="objective" value={form.objective} onChange={e => setForm(f => ({ ...f, objective: e.target.value }))} placeholder="e.g. Traffic, Conversions, Awareness" />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Daily Budget ($)" name="budget_daily" type="number" value={form.budget_daily} onChange={e => setForm(f => ({ ...f, budget_daily: e.target.value }))} />
+            <FormField label="Total Budget ($)" name="budget_total" type="number" value={form.budget_total} onChange={e => setForm(f => ({ ...f, budget_total: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Start Date" name="start_date" type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+            <FormField label="End Date" name="end_date" type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
+          </div>
+          <FormField label="Notes" name="notes" type="textarea" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} />
+          <div className="flex justify-end gap-3 pt-2">
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
+            <button onClick={save} disabled={!form.campaign_name} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Create Campaign</button>
+          </div>
+        </div>
+      </Modal>
     </div>
-  )
+  );
 }
