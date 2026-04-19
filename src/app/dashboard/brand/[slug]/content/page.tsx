@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { ContentItem, Brand } from '@/lib/types'
+import type { ContentItem, Brand, ContentType, ContentStatus } from '@/lib/types'
 import { Plus, X, ExternalLink } from 'lucide-react'
 
 const STATUS_OPTIONS = ['idea','planned','in_progress','review','approved','scheduled','posted','rejected'] as const
@@ -27,9 +27,9 @@ export default function ContentPage() {
   const [editItem, setEditItem] = useState<ContentItem | null>(null)
 
   const [form, setForm] = useState({
-    date: '', day_of_week: '', content_type: 'static' as const, title: '',
+    date: '', day_of_week: '', content_type: 'static' as ContentType, title: '',
     contents: '', caption: '', hashtags: '', link: '', schedule_time: '',
-    status: 'planned' as const, comments: '',
+    status: 'planned' as ContentStatus, comments: '',
   })
 
   useEffect(() => { loadData() }, [slug])
