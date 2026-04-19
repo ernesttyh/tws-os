@@ -1,136 +1,151 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
-import { Settings, UserPlus, Shield, Users } from 'lucide-react';
+import StatusBadge from '@/components/ui/StatusBadge';
+import { Settings, UserPlus, Shield, Users, Trash2, Edit2 } from 'lucide-react';
 
-interface TeamMember { id: string; name: string; email: string; role: string; is_active: boolean; created_at: string }
-interface BrandAssignment { id: string; brand_id: string; team_member_id: string; role: string; module_permissions: Record<string, string> }
+interface TeamMember { id: string; name: string; email: string; role: string; auth_user_id: string | null; created_at: string }
 
-const ROLES = [{ value: 'admin', label: 'Admin (Master)' }, { value: 'manager', label: 'Account Manager' }, { value: 'designer', label: 'Designer' }, { value: 'copywriter', label: 'Copywriter' }, { value: 'videographer', label: 'Videographer' }, { value: 'intern', label: 'Intern' }, { value: 'custom', label: 'Custom' }];
+const ROLES = [
+  { value: 'master_admin', label: '👑 Master Admin' },
+  { value: 'admin', label: '🔧 Admin' },
+  { value: 'account_manager', label: '📊 Account Manager' },
+  { value: 'designer', label: '🎨 Designer' },
+  { value: 'videographer', label: '🎬 Videographer' },
+  { value: 'intern', label: '📝 Intern' },
+];
 
 export default function SettingsPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
-  const [brands, setBrands] = useState<{ id: string; name: string }[]>([]);
-  const [assignments, setAssignments] = useState<BrandAssignment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showMemberModal, setShowMemberModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string } | null>(null);
 
   const supabase = createBrowserClient();
 
-  useEffect(() => {
-    async function load() {
-      const [m, b, a] = await Promise.all([
-        supabase.from('team_members').select('*').order('name'),
-        supabase.from('brands').select('id,name').eq('status', 'active').order('name'),
-        supabase.from('brand_assignments').select('*'),
-      ]);
-      setMembers(m.data || []);
-      setBrands(b.data || []);
-      setAssignments(a.data || []);
-      setLoading(false);
-    }
-    load();
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) setCurrentUser({ id: user.id, email: user.email || '' });
+    const res = await fetch('/api/team');
+    if (res.ok) setMembers(await res.json());
+    setLoading(false);
   }, [supabase]);
 
-  const [memberForm, setMemberForm] = useState({ name: '', email: '', role: 'manager' });
-  const resetMemberForm = () => setMemberForm({ name: '', email: '', role: 'manager' });
+  useEffect(() => { loadData(); }, [loadData]);
 
-  const saveMember = async () => {
-    await supabase.from('team_members').insert(memberForm);
-    const { data } = await supabase.from('team_members').select('*').order('name');
-    setMembers(data || []);
-    setShowMemberModal(false);
-    resetMemberForm();
+  const [form, setForm] = useState({ name: '', email: '', role: 'account_manager', password: '' });
+  const resetForm = () => setForm({ name: '', email: '', role: 'account_manager', password: '' });
+
+  const createMember = async () => {
+    await fetch('/api/team', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+    setShowModal(false); resetForm(); loadData();
   };
 
-  const [assignForm, setAssignForm] = useState({ brand_id: '', role: '' });
-
-  const saveAssignment = async () => {
-    if (!selectedMember) return;
-    await supabase.from('brand_assignments').insert({ team_member_id: selectedMember.id, brand_id: assignForm.brand_id, role: assignForm.role || 'Account Manager' });
-    const { data } = await supabase.from('brand_assignments').select('*');
-    setAssignments(data || []);
-    setShowAssignModal(false);
+  const deleteMember = async (id: string) => {
+    if (!confirm('Remove this team member?')) return;
+    await fetch(`/api/team/${id}`, { method: 'DELETE' });
+    loadData();
   };
 
-  const getMemberBrands = (memberId: string) => {
-    const memberAssigns = assignments.filter(a => a.team_member_id === memberId);
-    return memberAssigns.map(a => brands.find(b => b.id === a.brand_id)?.name).filter(Boolean);
-  };
+  const currentMember = members.find(m => m.auth_user_id === currentUser?.id);
 
-  if (loading) return <div className="p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-20 bg-white/5 rounded" /><div className="h-64 bg-white/5 rounded" /></div></div>;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-white flex items-center gap-2"><Settings size={24} />Settings & Admin</h1></div>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex items-center gap-2 sm:gap-3">
+        <Settings className="text-purple-400 shrink-0" size={20} />
+        <h1 className="text-lg sm:text-2xl font-bold text-white">Settings & Admin</h1>
       </div>
 
+      {/* Current user */}
+      {currentMember && (
+        <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-3 sm:p-4 border border-white/10">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-purple-600 flex items-center justify-center text-white text-sm sm:text-lg font-bold shrink-0">{currentMember.name.charAt(0)}</div>
+            <div className="min-w-0">
+              <h2 className="text-white font-semibold text-sm sm:text-base truncate">{currentMember.name}</h2>
+              <p className="text-gray-400 text-xs sm:text-sm truncate">{currentMember.email}</p>
+              <StatusBadge status={currentMember.role} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Team Members */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2"><Users size={18} />Team Members</h2>
-          <button onClick={() => { resetMemberForm(); setShowMemberModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg"><UserPlus size={16} />Add Member</button>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Users size={16} className="text-gray-400 shrink-0" />
+          <h2 className="text-sm sm:text-lg font-semibold text-white">Team Members</h2>
+          <span className="text-xs sm:text-sm text-gray-400">({members.length})</span>
         </div>
-        <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b border-white/10">
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Name</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Email</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Role</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Brands</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Actions</th>
-            </tr></thead>
-            <tbody>
-              {members.map(m => (
-                <tr key={m.id} className="border-b border-white/5 hover:bg-white/5 transition">
-                  <td className="py-3 px-4 text-white font-medium">{m.name}</td>
-                  <td className="py-3 px-4 text-gray-400">{m.email}</td>
-                  <td className="py-3 px-4"><span className="px-2 py-0.5 rounded-full text-xs bg-purple-500/20 text-purple-400 capitalize">{m.role}</span></td>
-                  <td className="py-3 px-4">
-                    <div className="flex gap-1 flex-wrap">
-                      {getMemberBrands(m.id).map((b, i) => <span key={i} className="px-2 py-0.5 rounded text-xs bg-white/5 text-gray-300">{b}</span>)}
-                      {getMemberBrands(m.id).length === 0 && <span className="text-xs text-gray-500">None assigned</span>}
-                    </div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <button onClick={() => { setSelectedMember(m); setAssignForm({ brand_id: '', role: '' }); setShowAssignModal(true); }} className="text-xs text-purple-400 hover:text-purple-300">Assign Brand</button>
-                  </td>
-                </tr>
-              ))}
-              {members.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-gray-500">No team members yet. Add your first team member.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg shrink-0"><UserPlus size={14} /><span className="hidden sm:inline">Add Member</span><span className="sm:hidden">Add</span></button>
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden sm:block bg-white/5 rounded-lg border border-white/10 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="border-b border-white/10">
+            <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Name</th>
+            <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Email</th>
+            <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Role</th>
+            <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Auth</th>
+            <th className="text-right py-3 px-4 text-xs font-medium text-gray-400">Actions</th>
+          </tr></thead>
+          <tbody>
+            {members.map(m => (
+              <tr key={m.id} className="border-b border-white/5 hover:bg-white/5">
+                <td className="py-3 px-4 font-medium text-white">{m.name}</td>
+                <td className="py-3 px-4 text-gray-300">{m.email}</td>
+                <td className="py-3 px-4"><StatusBadge status={m.role} /></td>
+                <td className="py-3 px-4">{m.auth_user_id ? <span className="text-green-400 text-xs">✓ Active</span> : <span className="text-gray-500 text-xs">Pending</span>}</td>
+                <td className="py-3 px-4 text-right">
+                  <button onClick={() => deleteMember(m.id)} disabled={m.auth_user_id === currentUser?.id} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-red-400 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={14} /></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile card view */}
+      <div className="sm:hidden space-y-2">
+        {members.map(m => (
+          <div key={m.id} className="bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-purple-600/30 flex items-center justify-center text-purple-300 text-xs font-bold shrink-0">{m.name.charAt(0)}</div>
+                <div className="min-w-0">
+                  <div className="text-white text-sm font-medium truncate">{m.name}</div>
+                  <div className="text-gray-400 text-[10px] truncate">{m.email}</div>
+                </div>
+              </div>
+              <button onClick={() => deleteMember(m.id)} disabled={m.auth_user_id === currentUser?.id} className="p-1.5 hover:bg-white/10 rounded text-gray-400 hover:text-red-400 disabled:opacity-30 shrink-0"><Trash2 size={14} /></button>
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <StatusBadge status={m.role} />
+              {m.auth_user_id ? <span className="text-green-400 text-[10px]">✓ Active</span> : <span className="text-gray-500 text-[10px]">Pending</span>}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Add Member Modal */}
-      <Modal open={showMemberModal} onClose={() => setShowMemberModal(false)} title="Add Team Member" size="md">
+      <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Team Member" size="md">
         <div className="space-y-4">
-          <FormField label="Name" name="name" value={memberForm.name} onChange={e => setMemberForm(f => ({ ...f, name: e.target.value }))} required />
-          <FormField label="Email" name="email" type="email" value={memberForm.email} onChange={e => setMemberForm(f => ({ ...f, email: e.target.value }))} required />
-          <FormField label="Role" name="role" value={memberForm.role} onChange={e => setMemberForm(f => ({ ...f, role: e.target.value }))} options={ROLES} />
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowMemberModal(false)} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
-            <button onClick={saveMember} disabled={!memberForm.name || !memberForm.email} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Add Member</button>
+          <FormField label="Full Name" name="name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required />
+          <FormField label="Email" name="email" type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+          <FormField label="Role" name="role" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))} options={ROLES} />
+          <FormField label="Temporary Password" name="password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min 8 characters" />
+          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3">
+            <p className="text-xs text-blue-400">This creates a team member record. An auth account will be provisioned separately.</p>
           </div>
-        </div>
-      </Modal>
-
-      {/* Assign Brand Modal */}
-      <Modal open={showAssignModal} onClose={() => setShowAssignModal(false)} title={`Assign Brand to ${selectedMember?.name}`} size="md">
-        <div className="space-y-4">
-          <FormField label="Brand" name="brand_id" value={assignForm.brand_id} onChange={e => setAssignForm(f => ({ ...f, brand_id: e.target.value }))} options={brands.map(b => ({ value: b.id, label: b.name }))} required />
-          <FormField label="Role for this brand" name="role" value={assignForm.role} onChange={e => setAssignForm(f => ({ ...f, role: e.target.value }))} placeholder="e.g. Account Manager" />
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
-            <button onClick={saveAssignment} disabled={!assignForm.brand_id} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Assign</button>
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
+            <button onClick={createMember} disabled={!form.name || !form.email} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Add Member</button>
           </div>
         </div>
       </Modal>

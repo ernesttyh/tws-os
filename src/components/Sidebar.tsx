@@ -8,7 +8,11 @@ import type { Brand, BrandGroup } from '@/lib/types'
 import { BRAND_GROUPS } from '@/lib/types'
 import { Search, LayoutDashboard, Settings, ChevronDown, ChevronRight } from 'lucide-react'
 
-export default function Sidebar() {
+interface SidebarProps {
+  onNavigate?: () => void
+}
+
+export default function Sidebar({ onNavigate }: SidebarProps) {
   const [brands, setBrands] = useState<Brand[]>([])
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
@@ -37,13 +41,17 @@ export default function Sidebar() {
     setCollapsed(prev => ({ ...prev, [g]: !prev[g] }))
   }
 
+  const handleNavClick = () => {
+    if (onNavigate) onNavigate()
+  }
+
   return (
-    <aside className="w-60 h-screen flex flex-col border-r" 
+    <aside className="w-full h-screen flex flex-col border-r" 
       style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
       
       {/* Logo */}
       <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-        <Link href="/dashboard" className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2" onClick={handleNavClick}>
           <span className="text-xl font-bold" style={{ color: 'var(--accent)' }}>TWS</span>
           <span className="text-xl font-light" style={{ color: 'var(--text-primary)' }}>OS</span>
         </Link>
@@ -67,6 +75,7 @@ export default function Sidebar() {
       {/* Dashboard link */}
       <div className="px-3 mb-1">
         <Link href="/dashboard"
+          onClick={handleNavClick}
           className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
             pathname === '/dashboard' ? 'text-white' : ''
           }`}
@@ -105,6 +114,7 @@ export default function Sidebar() {
                 const isActive = pathname.includes(`/brand/${brand.slug}`)
                 return (
                   <Link key={brand.id} href={`/dashboard/brand/${brand.slug}`}
+                    onClick={handleNavClick}
                     className="flex items-center gap-2 px-3 py-1.5 ml-3 rounded-lg text-sm transition-all"
                     style={{
                       background: isActive ? 'var(--accent)' + '20' : 'transparent',
@@ -127,6 +137,7 @@ export default function Sidebar() {
       {/* Settings */}
       <div className="p-3 border-t" style={{ borderColor: 'var(--border)' }}>
         <Link href="/dashboard/settings"
+          onClick={handleNavClick}
           className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
           style={{ color: 'var(--text-secondary)' }}>
           <Settings size={16} />

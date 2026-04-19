@@ -77,30 +77,30 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
   const prevYear = () => setCurrentDate(new Date(year - 1, month, 1));
   const nextYear = () => setCurrentDate(new Date(year + 1, month, 1));
 
-  if (loading) return <div className="p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-white/5 rounded w-48" /><div className="h-96 bg-white/5 rounded" /></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-white/5 rounded w-48" /><div className="h-96 bg-white/5 rounded" /></div></div>;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div className="flex gap-1 bg-white/5 rounded-lg p-1">
-            <button onClick={() => setViewMode('month')} className={`px-3 py-1.5 rounded-md text-sm transition ${viewMode === 'month' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Month</button>
-            <button onClick={() => setViewMode('year')} className={`px-3 py-1.5 rounded-md text-sm transition ${viewMode === 'year' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Year</button>
+            <button onClick={() => setViewMode('month')} className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md text-xs sm:text-sm transition ${viewMode === 'month' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Month</button>
+            <button onClick={() => setViewMode('year')} className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-md text-xs sm:text-sm transition ${viewMode === 'year' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Year</button>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={viewMode === 'month' ? prevMonth : prevYear} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400"><ChevronLeft size={18} /></button>
-            <span className="text-white font-semibold min-w-[180px] text-center">{viewMode === 'month' ? monthName : year}</span>
-            <button onClick={viewMode === 'month' ? nextMonth : nextYear} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400"><ChevronRight size={18} /></button>
+          <div className="flex items-center gap-1 sm:gap-2">
+            <button onClick={viewMode === 'month' ? prevMonth : prevYear} className="p-1 sm:p-1.5 rounded-lg hover:bg-white/10 text-gray-400"><ChevronLeft size={16} /></button>
+            <span className="text-white font-semibold text-xs sm:text-sm min-w-[120px] sm:min-w-[180px] text-center">{viewMode === 'month' ? monthName : year}</span>
+            <button onClick={viewMode === 'month' ? nextMonth : nextYear} className="p-1 sm:p-1.5 rounded-lg hover:bg-white/10 text-gray-400"><ChevronRight size={16} /></button>
           </div>
         </div>
-        <button onClick={() => { resetForm(); setEditEvent(null); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition"><Plus size={16} />Add Event</button>
+        <button onClick={() => { resetForm(); setEditEvent(null); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition self-end sm:self-auto"><Plus size={14} /><span className="hidden sm:inline">Add Event</span><span className="sm:hidden">Add</span></button>
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 flex-wrap">
+      <div className="flex gap-2 sm:gap-4 flex-wrap">
         {EVENT_TYPES.map(t => (
-          <div key={t.value} className="flex items-center gap-1.5 text-xs text-gray-400">
-            <div className={`w-2.5 h-2.5 rounded-full ${TYPE_COLORS[t.value]}`} />
+          <div key={t.value} className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-xs text-gray-400">
+            <div className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${TYPE_COLORS[t.value]}`} />
             {t.label.split(' ')[1]}
           </div>
         ))}
@@ -110,25 +110,29 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
       {viewMode === 'month' && (
         <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
           <div className="grid grid-cols-7">
-            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-              <div key={d} className="py-2 text-center text-xs font-medium text-gray-400 border-b border-white/10">{d}</div>
+            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+              <div key={i} className="py-1.5 sm:py-2 text-center text-[10px] sm:text-xs font-medium text-gray-400 border-b border-white/10">
+                <span className="sm:hidden">{d}</span>
+                <span className="hidden sm:inline">{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i]}</span>
+              </div>
             ))}
-            {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} className="min-h-[100px] border-b border-r border-white/5" />)}
+            {Array.from({ length: firstDay }).map((_, i) => <div key={`empty-${i}`} className="min-h-[48px] sm:min-h-[100px] border-b border-r border-white/5" />)}
             {days.map(d => {
               const dayEvents = getEventsForDate(year, month, d);
               const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               return (
-                <div key={d} className={`min-h-[100px] border-b border-r border-white/5 p-1.5 cursor-pointer hover:bg-white/5 transition ${isToday ? 'bg-purple-500/5' : ''}`}
+                <div key={d} className={`min-h-[48px] sm:min-h-[100px] border-b border-r border-white/5 p-0.5 sm:p-1.5 cursor-pointer hover:bg-white/5 transition ${isToday ? 'bg-purple-500/5' : ''}`}
                      onClick={() => { setSelectedDate(dateStr); setForm(f => ({ ...f, start_date: dateStr })); setShowModal(true); }}>
-                  <span className={`text-xs font-medium ${isToday ? 'bg-purple-600 text-white px-1.5 py-0.5 rounded-full' : 'text-gray-400'}`}>{d}</span>
-                  <div className="space-y-0.5 mt-1">
-                    {dayEvents.slice(0, 3).map(e => (
-                      <div key={e.id} className={`text-xs px-1.5 py-0.5 rounded truncate text-white ${TYPE_COLORS[e.event_type] || 'bg-gray-600'}`} onClick={(ev) => { ev.stopPropagation(); setEditEvent(e); setForm({ title: e.title, event_type: e.event_type, start_date: e.start_date, end_date: e.end_date || '', start_time: e.start_time || '', all_day: e.all_day, description: e.description || '', location: e.location || '' }); setShowModal(true); }}>
-                        {e.title}
+                  <span className={`text-[10px] sm:text-xs font-medium ${isToday ? 'bg-purple-600 text-white px-1 sm:px-1.5 py-0.5 rounded-full' : 'text-gray-400'}`}>{d}</span>
+                  <div className="space-y-0.5 mt-0.5">
+                    {dayEvents.slice(0, 2).map(e => (
+                      <div key={e.id} className={`text-[8px] sm:text-xs px-1 sm:px-1.5 py-0 sm:py-0.5 rounded truncate text-white ${TYPE_COLORS[e.event_type] || 'bg-gray-600'}`} onClick={(ev) => { ev.stopPropagation(); setEditEvent(e); setForm({ title: e.title, event_type: e.event_type, start_date: e.start_date, end_date: e.end_date || '', start_time: e.start_time || '', all_day: e.all_day, description: e.description || '', location: e.location || '' }); setShowModal(true); }}>
+                        <span className="hidden sm:inline">{e.title}</span>
+                        <span className="sm:hidden">•</span>
                       </div>
                     ))}
-                    {dayEvents.length > 3 && <span className="text-xs text-gray-500">+{dayEvents.length - 3} more</span>}
+                    {dayEvents.length > 2 && <span className="text-[8px] sm:text-xs text-gray-500">+{dayEvents.length - 2}</span>}
                   </div>
                 </div>
               );
@@ -139,20 +143,20 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
 
       {/* YEARLY VIEW */}
       {viewMode === 'year' && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
           {Array.from({ length: 12 }, (_, mi) => {
             const mDays = new Date(year, mi + 1, 0).getDate();
             const mFirst = new Date(year, mi, 1).getDay();
             const mEvents = events.filter(e => { const d = new Date(e.start_date); return d.getMonth() === mi && d.getFullYear() === year; });
             return (
-              <div key={mi} className="bg-white/5 rounded-lg border border-white/10 p-3 cursor-pointer hover:border-white/20 transition" onClick={() => { setCurrentDate(new Date(year, mi, 1)); setViewMode('month'); }}>
-                <h3 className="text-sm font-semibold text-white mb-2">{new Date(year, mi).toLocaleString('en-US', { month: 'long' })} <span className="text-gray-500 font-normal">({mEvents.length})</span></h3>
+              <div key={mi} className="bg-white/5 rounded-lg border border-white/10 p-2 sm:p-3 cursor-pointer hover:border-white/20 transition" onClick={() => { setCurrentDate(new Date(year, mi, 1)); setViewMode('month'); }}>
+                <h3 className="text-xs sm:text-sm font-semibold text-white mb-1.5 sm:mb-2">{new Date(year, mi).toLocaleString('en-US', { month: 'short' })} <span className="text-gray-500 font-normal">({mEvents.length})</span></h3>
                 <div className="grid grid-cols-7 gap-0.5 text-center">
-                  {['S','M','T','W','T','F','S'].map((d,i) => <span key={i} className="text-[9px] text-gray-500">{d}</span>)}
+                  {['S','M','T','W','T','F','S'].map((d,i) => <span key={i} className="text-[7px] sm:text-[9px] text-gray-500">{d}</span>)}
                   {Array.from({ length: mFirst }).map((_,i) => <span key={`e${i}`} />)}
                   {Array.from({ length: mDays }, (_,d) => {
                     const dayEvts = getEventsForDate(year, mi, d + 1);
-                    return <span key={d} className={`text-[10px] rounded-sm ${dayEvts.length > 0 ? 'bg-purple-600 text-white font-bold' : 'text-gray-500'}`}>{d + 1}</span>;
+                    return <span key={d} className={`text-[8px] sm:text-[10px] rounded-sm ${dayEvts.length > 0 ? 'bg-purple-600 text-white font-bold' : 'text-gray-500'}`}>{d + 1}</span>;
                   })}
                 </div>
               </div>

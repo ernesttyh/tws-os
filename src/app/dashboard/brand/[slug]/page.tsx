@@ -50,7 +50,7 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  if (loading || !stats) return <div className="p-6"><div className="animate-pulse space-y-4"><div className="h-32 bg-white/5 rounded-xl" /><div className="grid grid-cols-4 gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-24 bg-white/5 rounded-xl" />)}</div></div></div>;
+  if (loading || !stats) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-24 sm:h-32 bg-white/5 rounded-xl" /><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-20 sm:h-24 bg-white/5 rounded-xl" />)}</div></div></div>;
 
   const modules = [
     { label: 'Tasks', icon: CheckSquare, value: `${stats.tasks.done}/${stats.tasks.total}`, sub: stats.tasks.overdue > 0 ? `${stats.tasks.overdue} overdue` : 'On track', color: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400', subColor: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400' },
@@ -74,31 +74,31 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
   const healthColor = healthScore >= 80 ? 'text-green-400' : healthScore >= 50 ? 'text-yellow-400' : 'text-red-400';
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Health Banner */}
-      <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-6 border border-white/10">
+      <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 sm:p-6 border border-white/10">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-white">{brand?.name}</h1>
-            <p className="text-sm text-gray-400 mt-1 capitalize">{brand?.brand_group?.replace('_', ' ')} group</p>
+          <div className="min-w-0 mr-3">
+            <h1 className="text-lg sm:text-2xl font-bold text-white truncate">{brand?.name}</h1>
+            <p className="text-xs sm:text-sm text-gray-400 mt-1 capitalize">{brand?.brand_group?.replace('_', ' ')} group</p>
           </div>
-          <div className="text-right">
-            <div className={`text-4xl font-bold ${healthColor}`}>{healthScore}</div>
-            <div className="text-xs text-gray-400">Health Score</div>
+          <div className="text-right shrink-0">
+            <div className={`text-3xl sm:text-4xl font-bold ${healthColor}`}>{healthScore}</div>
+            <div className="text-[10px] sm:text-xs text-gray-400">Health Score</div>
           </div>
         </div>
         {stats.tasks.overdue > 0 && (
-          <div className="mt-4 flex items-center gap-2 text-sm text-red-400"><AlertTriangle size={16} />{stats.tasks.overdue} overdue task{stats.tasks.overdue > 1 ? 's' : ''} need attention</div>
+          <div className="mt-3 sm:mt-4 flex items-center gap-2 text-xs sm:text-sm text-red-400"><AlertTriangle size={16} />{stats.tasks.overdue} overdue task{stats.tasks.overdue > 1 ? 's' : ''} need attention</div>
         )}
       </div>
 
       {/* Module Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         {modules.map((m, i) => (
-          <div key={i} className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition">
-            <div className="flex items-center gap-2 text-gray-400 text-xs mb-2"><m.icon size={14} />{m.label}</div>
-            <div className={`text-2xl font-bold ${m.color}`}>{m.value}</div>
-            <div className={`text-xs mt-1 ${m.subColor}`}>{m.sub}</div>
+          <div key={i} className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10 hover:border-white/20 transition">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-gray-400 text-[10px] sm:text-xs mb-1 sm:mb-2"><m.icon size={14} className="shrink-0" /><span className="truncate">{m.label}</span></div>
+            <div className={`text-xl sm:text-2xl font-bold ${m.color}`}>{m.value}</div>
+            <div className={`text-[10px] sm:text-xs mt-0.5 sm:mt-1 ${m.subColor}`}>{m.sub}</div>
           </div>
         ))}
       </div>

@@ -1,116 +1,148 @@
 @import "tailwindcss";
 
 :root {
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-card: #1a1a2e;
-  --bg-hover: #222240;
-  --border: #2a2a45;
-  --text-primary: #f0f0f5;
-  --text-secondary: #9090b0;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
+  --background: #0f0f23;
+  --foreground: #e2e8f0;
+  --card: #16162a;
+  --border: #2d2d4a;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
   --success: #22c55e;
   --warning: #eab308;
   --danger: #ef4444;
 }
 
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--background);
+  color: var(--foreground);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-primary); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3a55; }
-
-/* Status badge colors */
-.badge { padding: 2px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; display: inline-flex; align-items: center; gap: 4px; }
-.badge-success { background: #22c55e20; color: #22c55e; }
-.badge-warning { background: #eab30820; color: #eab308; }
-.badge-danger { background: #ef444420; color: #ef4444; }
-.badge-info { background: #3b82f620; color: #3b82f6; }
-.badge-purple { background: #a855f720; color: #a855f7; }
-.badge-neutral { background: #6b728020; color: #9ca3af; }
-
-/* Card styles */
-.card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1.25rem;
+/* Scrollbar hiding utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
-.card-hover:hover {
-  border-color: var(--accent);
-  background: var(--bg-hover);
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
-/* Input styles */
-input, textarea, select {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.5rem 0.75rem;
-  color: var(--text-primary);
-  font-size: 0.875rem;
-  width: 100%;
-  outline: none;
-  transition: border-color 0.2s;
-}
-input:focus, textarea:focus, select:focus {
-  border-color: var(--accent);
-}
+/* Minimal scrollbar styling */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-/* Button styles */
-.btn {
+/* Badge styles */
+.badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: none;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
-.btn-primary { background: var(--accent); color: white; }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-secondary { background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border); }
-.btn-secondary:hover { border-color: var(--accent); }
-.btn-danger { background: var(--danger); color: white; }
-.btn-ghost { background: transparent; color: var(--text-secondary); }
-.btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
-.btn-sm { padding: 0.25rem 0.75rem; font-size: 0.75rem; }
-
-/* Table styles */
-.table-container { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-th { text-align: left; padding: 0.75rem 1rem; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
-td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
-tr:hover td { background: var(--bg-hover); }
+.badge-neutral { background: rgba(255,255,255,0.1); color: #94a3b8; }
+.badge-success { background: rgba(34,197,94,0.15); color: #22c55e; }
+.badge-warning { background: rgba(234,179,8,0.15); color: #eab308; }
+.badge-danger { background: rgba(239,68,68,0.15); color: #ef4444; }
+.badge-purple { background: rgba(124,58,237,0.15); color: #a78bfa; }
 
 /* Tab styles */
-.tab { padding: 0.5rem 1rem; font-size: 0.875rem; color: var(--text-secondary); border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.tab {
+  position: relative;
+  color: var(--text-secondary);
+  transition: color 0.2s;
+  border-bottom: 2px solid transparent;
+}
 .tab:hover { color: var(--text-primary); }
-.tab-active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-/* Modal overlay */
-.modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 50;
-}
-.modal {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; width: 100%; max-width: 32rem; max-height: 90vh; overflow-y: auto;
+/* Mobile-specific enhancements */
+@media (max-width: 640px) {
+  .badge {
+    font-size: 9px;
+    padding: 1px 6px;
+  }
+
+  /* Ensure proper touch targets */
+  button, a, input, select, textarea {
+    min-height: 36px;
+  }
+
+  /* Fix iOS zoom on input focus */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Compact spacing on mobile */
+  .tab {
+    padding: 6px 8px;
+  }
 }
 
-/* Kanban */
-.kanban-col {
-  min-width: 280px; background: var(--bg-secondary); border-radius: 12px; padding: 0.75rem; flex: 1;
+/* Safe area insets for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
-.kanban-card {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; cursor: pointer; transition: all 0.15s;
+
+/* Form field styles */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="time"],
+input[type="number"],
+input[type="url"],
+select,
+textarea {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 0.5rem;
+  color: white;
+  padding: 0.5rem 0.75rem;
+  width: 100%;
+  transition: border-color 0.2s;
 }
-.kanban-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+select option {
+  background: #1a1a2e;
+  color: white;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+
+/* Mobile slide-up animation for modals */
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@media (max-width: 640px) {
+  .fixed.inset-0 > div:last-child {
+    animation: slideUp 0.25s ease-out;
+  }
+}

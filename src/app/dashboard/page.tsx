@@ -61,62 +61,88 @@ export default function DashboardPage() {
   const needsAttention = brands.filter(b => b.health < 50).length;
   const totalOverdue = brands.reduce((s, b) => s + b.tasks_overdue, 0);
 
-  if (loading) return <div className="p-6"><div className="animate-pulse space-y-4"><div className="h-24 bg-white/5 rounded-xl" /><div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-24 bg-white/5 rounded-xl" /><div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div></div></div>;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-        <p className="text-gray-400 text-sm">Account overview across all brands</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-white">Dashboard</h1>
+        <p className="text-gray-400 text-xs sm:text-sm">Account overview across all brands</p>
       </div>
 
       {/* Global Stats */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Active Brands</div><div className="text-3xl font-bold text-white">{totalBrands}</div></div>
-        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Needs Attention</div><div className={`text-3xl font-bold ${needsAttention > 0 ? 'text-red-400' : 'text-green-400'}`}>{needsAttention}</div></div>
-        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Overdue Tasks</div><div className={`text-3xl font-bold ${totalOverdue > 0 ? 'text-red-400' : 'text-green-400'}`}>{totalOverdue}</div></div>
-        <div className="bg-white/5 rounded-xl p-4 border border-white/10"><div className="text-xs text-gray-400 mb-1">Avg Health</div><div className={`text-3xl font-bold ${healthColor(brands.reduce((s, b) => s + b.health, 0) / (brands.length || 1))}`}>{Math.round(brands.reduce((s, b) => s + b.health, 0) / (brands.length || 1))}</div></div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10"><div className="text-[10px] sm:text-xs text-gray-400 mb-1">Active Brands</div><div className="text-2xl sm:text-3xl font-bold text-white">{totalBrands}</div></div>
+        <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10"><div className="text-[10px] sm:text-xs text-gray-400 mb-1">Needs Attention</div><div className={`text-2xl sm:text-3xl font-bold ${needsAttention > 0 ? 'text-red-400' : 'text-green-400'}`}>{needsAttention}</div></div>
+        <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10"><div className="text-[10px] sm:text-xs text-gray-400 mb-1">Overdue Tasks</div><div className={`text-2xl sm:text-3xl font-bold ${totalOverdue > 0 ? 'text-red-400' : 'text-green-400'}`}>{totalOverdue}</div></div>
+        <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10"><div className="text-[10px] sm:text-xs text-gray-400 mb-1">Avg Health</div><div className={`text-2xl sm:text-3xl font-bold ${healthColor(brands.reduce((s, b) => s + b.health, 0) / (brands.length || 1))}`}>{Math.round(brands.reduce((s, b) => s + b.health, 0) / (brands.length || 1))}</div></div>
       </div>
 
-      {/* Brand Table */}
-      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-white/10">
-            <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Brand</th>
-            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Health</th>
-            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Tasks</th>
-            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Content</th>
-            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Meetings</th>
-            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Ads</th>
-            <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">KOLs</th>
-          </tr></thead>
-          <tbody>
-            {brands.map(b => (
-              <tr key={b.id} className="border-b border-white/5 hover:bg-white/5 transition">
-                <td className="py-3 px-4">
-                  <Link href={`/dashboard/brand/${b.slug}`} className="text-white hover:text-purple-400 font-medium transition">{b.name}</Link>
-                  <div className="text-xs text-gray-500 capitalize">{b.brand_group?.replace('_', ' ')}</div>
-                </td>
-                <td className="py-3 px-4 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <div className="w-16 h-2 bg-white/10 rounded-full overflow-hidden"><div className={`h-full rounded-full ${healthBg(b.health)}`} style={{ width: `${b.health}%` }} /></div>
-                    <span className={`text-xs font-semibold ${healthColor(b.health)}`}>{b.health}</span>
-                  </div>
-                </td>
-                <td className="py-3 px-4 text-center">
-                  <span className="text-gray-300">{b.tasks_total}</span>
-                  {b.tasks_overdue > 0 && <span className="text-red-400 text-xs ml-1">({b.tasks_overdue} ⚠️)</span>}
-                </td>
-                <td className="py-3 px-4 text-center text-gray-300">{b.content_count}</td>
-                <td className="py-3 px-4 text-center">
-                  <span className={b.meetings_this_month >= 1 ? 'text-green-400' : 'text-gray-500'}>{b.meetings_this_month}</span>
-                </td>
-                <td className="py-3 px-4 text-center text-gray-300">{b.active_ads}</td>
-                <td className="py-3 px-4 text-center text-gray-300">{b.kol_count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Brand Cards — Mobile */}
+      <div className="sm:hidden space-y-2">
+        {brands.map(b => (
+          <Link key={b.id} href={`/dashboard/brand/${b.slug}`} className="block bg-white/5 rounded-lg p-3 border border-white/10 active:bg-white/10 transition">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <span className="text-white font-medium text-sm">{b.name}</span>
+                <div className="text-[10px] text-gray-500 capitalize">{b.brand_group?.replace('_', ' ')}</div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-10 h-1.5 bg-white/10 rounded-full overflow-hidden"><div className={`h-full rounded-full ${healthBg(b.health)}`} style={{ width: `${b.health}%` }} /></div>
+                <span className={`text-xs font-semibold ${healthColor(b.health)}`}>{b.health}</span>
+              </div>
+            </div>
+            <div className="flex gap-3 text-[10px] text-gray-400">
+              <span>📋 {b.tasks_total} tasks{b.tasks_overdue > 0 ? <span className="text-red-400 ml-0.5">({b.tasks_overdue}⚠️)</span> : ''}</span>
+              <span>📝 {b.content_count}</span>
+              <span>📅 {b.meetings_this_month}</span>
+              <span>📊 {b.active_ads}</span>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {/* Brand Table — Desktop */}
+      <div className="hidden sm:block bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-white/10">
+              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400">Brand</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Health</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Tasks</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Content</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Meetings</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">Ads</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400">KOLs</th>
+            </tr></thead>
+            <tbody>
+              {brands.map(b => (
+                <tr key={b.id} className="border-b border-white/5 hover:bg-white/5 transition">
+                  <td className="py-3 px-4">
+                    <Link href={`/dashboard/brand/${b.slug}`} className="text-white hover:text-purple-400 font-medium transition">{b.name}</Link>
+                    <div className="text-xs text-gray-500 capitalize">{b.brand_group?.replace('_', ' ')}</div>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-16 h-2 bg-white/10 rounded-full overflow-hidden"><div className={`h-full rounded-full ${healthBg(b.health)}`} style={{ width: `${b.health}%` }} /></div>
+                      <span className={`text-xs font-semibold ${healthColor(b.health)}`}>{b.health}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <span className="text-gray-300">{b.tasks_total}</span>
+                    {b.tasks_overdue > 0 && <span className="text-red-400 text-xs ml-1">({b.tasks_overdue} ⚠️)</span>}
+                  </td>
+                  <td className="py-3 px-4 text-center text-gray-300">{b.content_count}</td>
+                  <td className="py-3 px-4 text-center">
+                    <span className={b.meetings_this_month >= 1 ? 'text-green-400' : 'text-gray-500'}>{b.meetings_this_month}</span>
+                  </td>
+                  <td className="py-3 px-4 text-center text-gray-300">{b.active_ads}</td>
+                  <td className="py-3 px-4 text-center text-gray-300">{b.kol_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

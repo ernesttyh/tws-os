@@ -44,44 +44,44 @@ export default function DesignPage({ params }: { params: Promise<{ slug: string 
   // Group by status for pipeline view
   const pipeline = DESIGN_STATUSES.map(s => ({ ...s, items: briefs.filter(b => b.status === s.value) }));
 
-  if (loading) return <div className="p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-white">Design Pipeline</h2>
-          <p className="text-sm text-gray-400">{briefs.length} briefs · {briefs.filter(b => b.status === 'approved').length} approved</p>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-semibold text-white">Design Pipeline</h2>
+          <p className="text-xs sm:text-sm text-gray-400">{briefs.length} briefs · {briefs.filter(b => b.status === 'approved').length} approved</p>
         </div>
-        <button onClick={() => { resetForm(); setEditBrief(null); setShowModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg"><Plus size={16} />New Brief</button>
+        <button onClick={() => { resetForm(); setEditBrief(null); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg shrink-0"><Plus size={14} /><span className="hidden sm:inline">New Brief</span><span className="sm:hidden">New</span></button>
       </div>
 
       {briefs.length === 0 ? (
         <EmptyState icon={Palette} title="No design briefs" description="Create design briefs for your designers" action={{ label: 'Create Brief', onClick: () => { resetForm(); setShowModal(true); } }} />
       ) : (
-        <div className="grid grid-cols-6 gap-3">
+        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
           {pipeline.map(stage => (
-            <div key={stage.value} className="bg-white/5 rounded-lg p-3 min-h-[200px]">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-semibold text-gray-400 uppercase">{stage.label}</span>
-                <span className="text-xs text-gray-500">{stage.items.length}</span>
+            <div key={stage.value} className="bg-white/5 rounded-lg p-2.5 sm:p-3 min-h-[180px] sm:min-h-[200px] min-w-[200px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
+              <div className="flex items-center justify-between mb-2 sm:mb-3">
+                <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{stage.label}</span>
+                <span className="text-[10px] sm:text-xs text-gray-500">{stage.items.length}</span>
               </div>
               <div className="space-y-2">
                 {stage.items.map(b => (
-                  <div key={b.id} className="bg-[#1a1a2e] rounded-lg p-3 border border-white/5 hover:border-white/20 transition cursor-pointer group"
+                  <div key={b.id} className="bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-pointer group"
                        onClick={() => { setEditBrief(b); setForm({ title: b.title, description: b.description || '', dimensions: b.dimensions || '', status: b.status, deadline: b.deadline || '', assigned_to: b.assignee?.id || '', drive_folder_url: b.drive_folder_url || '', revision_notes: b.revision_notes || '' }); setShowModal(true); }}>
                     <div className="flex items-start justify-between">
-                      <span className="text-sm text-white font-medium leading-tight">{b.title}</span>
+                      <span className="text-xs sm:text-sm text-white font-medium leading-tight">{b.title}</span>
                       <button onClick={e => { e.stopPropagation(); deleteBrief(b.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-500 hover:text-red-400"><Trash2 size={12} /></button>
                     </div>
-                    {b.dimensions && <p className="text-xs text-gray-500 mt-1">📐 {b.dimensions}</p>}
-                    <div className="flex items-center gap-2 mt-2">
-                      {b.assignee && <span className="text-xs text-gray-400">→ {b.assignee.name}</span>}
-                      {b.deadline && <span className="text-xs text-gray-500">{new Date(b.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                    {b.dimensions && <p className="text-[10px] sm:text-xs text-gray-500 mt-1">📐 {b.dimensions}</p>}
+                    <div className="flex items-center gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
+                      {b.assignee && <span className="text-[10px] sm:text-xs text-gray-400">→ {b.assignee.name}</span>}
+                      {b.deadline && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(b.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                     </div>
-                    {b.revision_count > 0 && <span className="text-xs text-orange-400 mt-1">Rev {b.revision_count}</span>}
+                    {b.revision_count > 0 && <span className="text-[10px] sm:text-xs text-orange-400 mt-1">Rev {b.revision_count}</span>}
                     {b.drive_folder_url && (
-                      <a href={b.drive_folder_url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} className="flex items-center gap-1 text-xs text-purple-400 mt-1 hover:text-purple-300"><ExternalLink size={10} />Drive</a>
+                      <a href={b.drive_folder_url} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} className="flex items-center gap-1 text-[10px] sm:text-xs text-purple-400 mt-1 hover:text-purple-300"><ExternalLink size={10} />Drive</a>
                     )}
                   </div>
                 ))}
@@ -95,12 +95,12 @@ export default function DesignPage({ params }: { params: Promise<{ slug: string 
         <div className="space-y-4">
           <FormField label="Title" name="title" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} required placeholder="e.g. April Promo Banner" />
           <FormField label="Description" name="description" type="textarea" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Design requirements, references, copy text..." rows={4} />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <FormField label="Dimensions" name="dimensions" value={form.dimensions} onChange={e => setForm(f => ({ ...f, dimensions: e.target.value }))} placeholder="1080x1080" />
             <FormField label="Status" name="status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} options={DESIGN_STATUSES} />
             <FormField label="Deadline" name="deadline" type="date" value={form.deadline} onChange={e => setForm(f => ({ ...f, deadline: e.target.value }))} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormField label="Assign To" name="assigned_to" value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))} options={teamMembers.map(m => ({ value: m.id, label: m.name }))} />
             <FormField label="Google Drive Folder" name="drive_folder_url" value={form.drive_folder_url} onChange={e => setForm(f => ({ ...f, drive_folder_url: e.target.value }))} placeholder="https://drive.google.com/..." />
           </div>

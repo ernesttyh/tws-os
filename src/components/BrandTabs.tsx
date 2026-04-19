@@ -9,10 +9,10 @@ import {
 
 const tabs = [
   { href: '', label: 'Overview', icon: BarChart3 },
-  { href: '/operations', label: 'Operations', icon: ClipboardList },
-  { href: '/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/operations', label: 'Ops', mobileLabel: 'Ops', icon: ClipboardList },
+  { href: '/calendar', label: 'Calendar', mobileLabel: 'Cal', icon: Calendar },
   { href: '/content', label: 'SMM', icon: FileText },
-  { href: '/influencers', label: 'Influencers', icon: Users },
+  { href: '/influencers', label: 'KOLs', mobileLabel: 'KOLs', icon: Users },
   { href: '/ads', label: 'Ads', icon: Megaphone },
   { href: '/design', label: 'Design', icon: Palette },
 ]
@@ -22,7 +22,7 @@ export default function BrandTabs({ slug }: { slug: string }) {
   const base = `/dashboard/brand/${slug}`
 
   return (
-    <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
+    <div className="flex gap-0.5 sm:gap-1 border-b overflow-x-auto scrollbar-hide -mx-3 sm:mx-0 px-3 sm:px-0" style={{ borderColor: 'var(--border)' }}>
       {tabs.map(tab => {
         const fullPath = base + tab.href
         const isActive = tab.href === '' 
@@ -32,9 +32,10 @@ export default function BrandTabs({ slug }: { slug: string }) {
 
         return (
           <Link key={tab.href} href={fullPath}
-            className={`tab flex items-center gap-1.5 ${isActive ? 'tab-active' : ''}`}>
-            <Icon size={14} />
-            {tab.label}
+            className={`tab flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm whitespace-nowrap px-2 sm:px-3 py-2 ${isActive ? 'tab-active' : ''}`}>
+            <Icon size={14} className="shrink-0" />
+            <span className="sm:hidden">{tab.mobileLabel || tab.label}</span>
+            <span className="hidden sm:inline">{tab.label}</span>
           </Link>
         )
       })}
