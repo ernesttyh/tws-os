@@ -14,7 +14,7 @@ type StatusFilter = 'all' | 'idea' | 'planned' | 'in_progress' | 'review' | 'app
 interface ContentItem { id: string; title: string | null; contents: string | null; content_type: string; status: string; date: string | null; day_of_week: string | null; caption: string | null; hashtags: string | null; link: string | null; schedule_time: string | null; month: string; comments: string | null }
 interface ShootBrief { id: string; title: string; shoot_date: string | null; shoot_time: string | null; location: string | null; status: string; shot_list: string | null; talent: string | null; client_requirements: string | null; notes: string | null }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const CONTENT_TYPES = [{ value: 'reel', label: '🎬 Reel' }, { value: 'carousel', label: '📱 Carousel' }, { value: 'static', label: '🖼 Static' }, { value: 'story', label: '📖 Story' }, { value: 'video', label: '🎥 Video' }, { value: 'tiktok', label: '🎵 TikTok' }, { value: 'blog', label: '✍️ Blog' }, { value: 'edm', label: '📧 EDM' }];
 const CONTENT_STATUSES = [{ value: 'idea', label: 'Idea' }, { value: 'planned', label: 'Planned' }, { value: 'in_progress', label: 'In Progress' }, { value: 'review', label: 'Review' }, { value: 'approved', label: 'Approved' }, { value: 'scheduled', label: 'Scheduled' }, { value: 'posted', label: 'Posted' }];
 
@@ -36,7 +36,9 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
   const [brandId, setBrandId] = useState<string | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [shoots, setShoots] = useState<ShootBrief[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState('All');
+
+  const currentMonth = `${MONTH_NAMES[new Date().getMonth()]} ${new Date().getFullYear()}`;
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [loading, setLoading] = useState(true);
   const [showContentModal, setShowContentModal] = useState(false);
   const [showShootModal, setShowShootModal] = useState(false);
@@ -53,31 +55,49 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
 
   const loadData = useCallback(async (bid: string) => {
     setLoading(true);
-    const monthParam = selectedMonth !== 'All' ? `?month=${selectedMonth}` : '';
     const [contentRes, shootsRes] = await Promise.all([
-      fetch(`/api/brands/${bid}/content${monthParam}`),
+      fetch(`/api/brands/${bid}/content`),
       fetch(`/api/brands/${bid}/shoots`),
     ]);
     if (contentRes.ok) setContent(await contentRes.json());
     if (shootsRes.ok) setShoots(await shootsRes.json());
     setLoading(false);
-  }, [selectedMonth]);
+  }, []);
 
   useEffect(() => { loadBrand().then(bid => { if (bid) loadData(bid); }); }, [loadBrand, loadData]);
-  useEffect(() => { if (brandId) loadData(brandId); }, [selectedMonth, brandId, loadData]);
 
-  // Status counts for pipeline
+  // Extract unique months from all content for the dropdown
+  const availableMonths = useMemo(() => {
+    const months = [...new Set(content.map(c => c.month).filter(Boolean))];
+    return months.sort((a, b) => {
+      const parse = (m: string) => {
+        const parts = m.split(' ');
+        const monthIdx = MONTH_NAMES.indexOf(parts[0]);
+        const year = parseInt(parts[1] || '2026');
+        return year * 12 + monthIdx;
+      };
+      return parse(b) - parse(a);
+    });
+  }, [content]);
+
+  // Client-side month filter
+  const monthFilteredContent = useMemo(() => {
+    if (selectedMonth === 'All') return content;
+    return content.filter(c => c.month === selectedMonth);
+  }, [content, selectedMonth]);
+
+  // Status counts for pipeline (based on month-filtered content)
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = { idea: 0, planned: 0, in_progress: 0, review: 0, approved: 0, scheduled: 0, posted: 0 };
-    content.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+    monthFilteredContent.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
     return counts;
-  }, [content]);
+  }, [monthFilteredContent]);
 
   // Filtered content based on status filter
   const filteredContent = useMemo(() => {
-    if (statusFilter === 'all') return content;
-    return content.filter(c => c.status === statusFilter);
-  }, [content, statusFilter]);
+    if (statusFilter === 'all') return monthFilteredContent;
+    return monthFilteredContent.filter(c => c.status === statusFilter);
+  }, [monthFilteredContent, statusFilter]);
 
   // Content form
   const [contentForm, setContentForm] = useState({ title: '', contents: '', content_type: 'static', status: 'planned', date: '', day_of_week: '', caption: '', hashtags: '', link: '', schedule_time: '', comments: '' });
@@ -85,7 +105,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
 
   const saveContent = async () => {
     if (!brandId) return;
-    const payload = { ...contentForm, month: selectedMonth === 'All' ? MONTHS[new Date().getMonth()] : selectedMonth };
+    const payload = { ...contentForm, month: selectedMonth === 'All' ? currentMonth : selectedMonth };
     Object.keys(payload).forEach(k => { if (payload[k as keyof typeof payload] === '') (payload as Record<string, unknown>)[k] = null; });
     if (editContent) {
       await fetch(`/api/brands/${brandId}/content/${editContent.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -134,7 +154,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
             <div className="flex items-center gap-2 sm:gap-3">
               <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg px-2 sm:px-3 py-2 text-white text-xs sm:text-sm">
                 <option value="All" className="bg-[#1a1a2e]">All Months</option>
-                {MONTHS.map(m => <option key={m} value={m} className="bg-[#1a1a2e]">{m}</option>)}
+                {availableMonths.map(m => <option key={m} value={m} className="bg-[#1a1a2e]">{m}</option>)}
               </select>
               <div className="flex gap-1 bg-white/5 rounded-lg p-0.5">
                 <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-gray-400'}`}><Grid3x3 size={14} /></button>
@@ -173,7 +193,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
               onClick={() => setStatusFilter('all')}
               className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap flex items-center gap-1.5 ${statusFilter === 'all' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}
             >
-              All <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px]">{content.length}</span>
+              All <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px]">{monthFilteredContent.length}</span>
             </button>
             {CONTENT_STATUSES.map(s => (
               <button

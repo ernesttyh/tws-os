@@ -11,22 +11,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
   return (
     <div className="flex h-screen overflow-hidden">
-      {/* Mobile backdrop */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/60 z-30 lg:hidden" 
-          onClick={closeSidebar} 
-        />
-      )}
-      
-      {/* Sidebar */}
-      <div className={`
-        fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 ease-in-out
-        lg:relative lg:translate-x-0 lg:w-60
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <Sidebar onNavigate={closeSidebar} />
-      </div>
+      {/* Sidebar handles its own fixed positioning, backdrop, and mobile toggle */}
+      <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">

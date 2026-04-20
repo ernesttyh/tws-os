@@ -1,12 +1,12 @@
 'use client';
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useMemo, use } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PriorityBadge from '@/components/ui/PriorityBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight } from 'lucide-react';
+import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight, Search } from 'lucide-react';
 
 type Tab = 'meetings' | 'tasks' | 'cadence';
 
@@ -26,6 +26,11 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [expandedMeeting, setExpandedMeeting] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
+
+  // Task view state
+  const [taskView, setTaskView] = useState<'table' | 'board'>('table');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedTask, setExpandedTask] = useState<string | null>(null);
 
   // Drag and drop state
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
@@ -112,6 +117,12 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     loadData(brandId);
   };
 
+  const openEditTask = (task: Task) => {
+    setEditTask(task);
+    setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' });
+    setShowTaskModal(true);
+  };
+
   // Drag and drop handler
   const handleDrop = async (newStatus: string) => {
     if (!draggedTask || !brandId) return;
@@ -142,9 +153,15 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     }
   };
 
+  // Filtered tasks for search
+  const filteredTasks = useMemo(() => {
+    if (!searchQuery) return tasks;
+    return tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase())));
+  }, [tasks, searchQuery]);
+
   const taskStatuses = ['backlog', 'todo', 'in_progress', 'review', 'done'];
   const statusLabels: Record<string, string> = { backlog: 'BACKLOG', todo: 'TODO', in_progress: 'IN PROGRESS', review: 'REVIEW', done: 'DONE' };
-  const tasksByStatus = taskStatuses.reduce((acc, s) => { acc[s] = tasks.filter(t => t.status === s); return acc; }, {} as Record<string, Task[]>);
+  const tasksByStatus = taskStatuses.reduce((acc, s) => { acc[s] = filteredTasks.filter(t => t.status === s); return acc; }, {} as Record<string, Task[]>);
 
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-white/5 rounded w-48" /><div className="h-64 bg-white/5 rounded" /></div></div>;
 
@@ -214,54 +231,141 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         </div>
       )}
 
-      {/* TASKS TAB - Kanban Board with Drag & Drop */}
+      {/* TASKS TAB */}
       {tab === 'tasks' && (
         <div className="space-y-3 sm:space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base sm:text-lg font-semibold text-white">Task Board</h2>
-            <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
+          {/* Header with view toggle */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-base sm:text-lg font-semibold text-white">Tasks</h2>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setTaskView('table')} className={`px-3 py-1.5 text-xs rounded-lg transition ${taskView === 'table' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}>
+                  📋 Table
+                </button>
+                <button onClick={() => setTaskView('board')} className={`px-3 py-1.5 text-xs rounded-lg transition ${taskView === 'board' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}>
+                  📊 Board
+                </button>
+              </div>
+            </div>
+            <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0 self-end sm:self-auto">
               <Plus size={14} /><span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
             </button>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
-            {taskStatuses.map(status => (
-              <div
-                key={status}
-                onDragOver={(e) => { e.preventDefault(); setDropTarget(status); }}
-                onDragLeave={() => setDropTarget(null)}
-                onDrop={() => handleDrop(status)}
-                className={`rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink transition-colors border-2 ${dropTarget === status ? 'border-purple-500 bg-purple-500/5' : 'border-transparent bg-white/5'}`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{statusLabels[status] || status.replace('_', ' ')}</span>
-                  <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
-                </div>
-                <div className="space-y-2">
-                  {(tasksByStatus[status] || []).map(task => (
-                    <div
-                      key={task.id}
-                      draggable
-                      onDragStart={() => setDraggedTask(task.id)}
-                      onDragEnd={() => { setDraggedTask(null); setDropTarget(null); }}
-                      className={`bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-grab active:cursor-grabbing group ${draggedTask === task.id ? 'opacity-50' : ''}`}
-                      onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}
-                    >
-                      <div className="flex items-start justify-between">
-                        <span className="text-xs sm:text-sm text-white font-medium leading-tight">{task.title}</span>
-                        <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
-                      </div>
-                      {task.description && <p className="text-[10px] sm:text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>}
-                      <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
-                        <PriorityBadge priority={task.priority} />
-                        {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-400">→ {task.assigned_member.name}</span>}
-                      </div>
-                    </div>
-                  ))}
+
+          {/* Search bar */}
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search tasks..."
+              className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition"
+            />
+          </div>
+
+          {/* Table View */}
+          {taskView === 'table' ? (
+            filteredTasks.length === 0 ? (
+              <EmptyState icon={CheckSquare} title={searchQuery ? 'No tasks found' : 'No tasks yet'} description={searchQuery ? 'Try a different search term' : 'Create your first task to get started'} action={{ label: 'Add Task', onClick: () => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); } }} />
+            ) : (
+              <div className="bg-white/5 rounded-lg border border-white/10 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10 text-left text-gray-400 text-xs">
+                        <th className="py-3 px-3 font-medium">Task</th>
+                        <th className="py-3 px-3 font-medium w-28">Status</th>
+                        <th className="py-3 px-3 font-medium w-24">Priority</th>
+                        <th className="py-3 px-3 font-medium w-32 hidden sm:table-cell">Assignee</th>
+                        <th className="py-3 px-3 font-medium w-28 hidden sm:table-cell">Due Date</th>
+                        <th className="py-3 px-3 font-medium w-20">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTasks.map(task => (
+                        <tr key={task.id}
+                            onClick={() => { setExpandedTask(expandedTask === task.id ? null : task.id); }}
+                            className="border-b border-white/5 hover:bg-white/5 cursor-pointer transition">
+                          <td className="py-3 px-3">
+                            <div className="font-medium text-white truncate max-w-xs">{task.title}</div>
+                            {expandedTask === task.id && (
+                              <div className="mt-2 space-y-2">
+                                {task.description && (
+                                  <div className="text-xs text-gray-400 whitespace-pre-wrap">{task.description}</div>
+                                )}
+                                {/* Mobile-only info shown when expanded */}
+                                <div className="flex gap-2 flex-wrap sm:hidden text-xs">
+                                  {task.assigned_member && <span className="text-gray-400">👤 {task.assigned_member.name}</span>}
+                                  {task.due_date && <span className="text-gray-400">📅 {new Date(task.due_date).toLocaleDateString()}</span>}
+                                </div>
+                                {task.tags && task.tags.length > 0 && (
+                                  <div className="flex gap-1 flex-wrap">
+                                    {task.tags.map(tag => (
+                                      <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-[10px] text-gray-400">{tag}</span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3"><StatusBadge status={task.status} /></td>
+                          <td className="py-3 px-3"><PriorityBadge priority={task.priority || 'medium'} /></td>
+                          <td className="py-3 px-3 text-gray-300 text-xs hidden sm:table-cell">{task.assigned_member?.name || '—'}</td>
+                          <td className="py-3 px-3 text-gray-300 text-xs hidden sm:table-cell">{task.due_date ? new Date(task.due_date).toLocaleDateString() : '—'}</td>
+                          <td className="py-3 px-3">
+                            <button onClick={(e) => { e.stopPropagation(); openEditTask(task); }} className="text-gray-400 hover:text-white transition"><Edit2 size={14} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-gray-400 hover:text-red-400 transition ml-1"><Trash2 size={14} /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-            ))}
-          </div>
+            )
+          ) : (
+            /* Board View (Kanban) */
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
+              {taskStatuses.map(status => (
+                <div
+                  key={status}
+                  onDragOver={(e) => { e.preventDefault(); setDropTarget(status); }}
+                  onDragLeave={() => setDropTarget(null)}
+                  onDrop={() => handleDrop(status)}
+                  className={`rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink transition-colors border-2 ${dropTarget === status ? 'border-purple-500 bg-purple-500/5' : 'border-transparent bg-white/5'}`}
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{statusLabels[status] || status.replace('_', ' ')}</span>
+                    <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {(tasksByStatus[status] || []).map(task => (
+                      <div
+                        key={task.id}
+                        draggable
+                        onDragStart={() => setDraggedTask(task.id)}
+                        onDragEnd={() => { setDraggedTask(null); setDropTarget(null); }}
+                        className={`bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-grab active:cursor-grabbing group ${draggedTask === task.id ? 'opacity-50' : ''}`}
+                        onClick={() => openEditTask(task)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <span className="text-xs sm:text-sm text-white font-medium leading-tight">{task.title}</span>
+                          <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
+                        </div>
+                        {task.description && <p className="text-[10px] sm:text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>}
+                        <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
+                          <PriorityBadge priority={task.priority} />
+                          {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                          {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-400">→ {task.assigned_member.name}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
