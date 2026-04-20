@@ -7,7 +7,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { BarChart3, Plus, TrendingUp, DollarSign, Eye, MousePointer } from 'lucide-react';
 
-interface Campaign { id: string; campaign_name: string; platform: string; status: string; objective: string | null; budget_daily: number | null; budget_total: number | null; start_date: string | null; end_date: string | null; notes: string | null }
+interface Campaign { id: string; campaign_name: string; platform: string; status: string; objective: string | null; budget_daily: number | null; budget_total: number | null; start_date: string | null; end_date: string | null; notes: string | null; impressions: number | null; reach: number | null; clicks: number | null; spend: number | null; ctr: number | null; cpc: number | null; cpm: number | null }
 interface Metric { campaign_id: string; date: string; spend: number | null; impressions: number | null; clicks: number | null; ctr: number | null; cpc: number | null; reach: number | null; conversions: number | null; roas: number | null }
 
 const PLATFORMS = [{ value: 'facebook', label: '📘 Meta' }, { value: 'instagram', label: '📸 IG' }, { value: 'google', label: '🔍 Google' }, { value: 'tiktok', label: '🎵 TikTok' }];
@@ -37,10 +37,10 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
     setShowModal(false); resetForm(); loadData(brandId);
   };
 
-  // Aggregate metrics
-  const totalSpend = metrics.reduce((s, m) => s + (m.spend || 0), 0);
-  const totalImpressions = metrics.reduce((s, m) => s + (m.impressions || 0), 0);
-  const totalClicks = metrics.reduce((s, m) => s + (m.clicks || 0), 0);
+  // Aggregate metrics from campaigns (data is on campaign columns, not ad_daily_metrics)
+  const totalSpend = campaigns.reduce((s, c) => s + (c.spend || 0), 0);
+  const totalImpressions = campaigns.reduce((s, c) => s + (c.impressions || 0), 0);
+  const totalClicks = campaigns.reduce((s, c) => s + (c.clicks || 0), 0);
   const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
 
   const filtered = filter === 'all' ? campaigns : campaigns.filter(c => c.platform === filter);
@@ -95,10 +95,11 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
       ) : (
         <div className="space-y-3">
           {filtered.map(c => {
-            const cMetrics = metrics.filter(m => m.campaign_id === c.id);
-            const cSpend = cMetrics.reduce((s, m) => s + (m.spend || 0), 0);
-            const cImpr = cMetrics.reduce((s, m) => s + (m.impressions || 0), 0);
-            const cClicks = cMetrics.reduce((s, m) => s + (m.clicks || 0), 0);
+            const cSpend = c.spend || 0;
+            const cImpr = c.impressions || 0;
+            const cClicks = c.clicks || 0;
+            const cCTR = c.ctr || 0;
+            const cCPC = c.cpc || 0;
             return (
               <div key={c.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:border-white/20 transition">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
@@ -111,11 +112,13 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
                       {c.start_date && <span>📅 {new Date(c.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{c.end_date ? ` - ${new Date(c.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ' - ongoing'}</span>}
                     </div>
                   </div>
-                  {cMetrics.length > 0 && (
+                  {(cSpend > 0 || cImpr > 0) && (
                     <div className="text-left sm:text-right text-[10px] sm:text-xs flex gap-3 sm:block shrink-0">
                       <div className="text-green-400 font-semibold">${cSpend.toFixed(2)} spent</div>
                       <div className="text-gray-400">{cImpr.toLocaleString()} impr</div>
                       <div className="text-gray-400">{cClicks.toLocaleString()} clicks</div>
+                      <div className="text-gray-400">CTR: {cCTR.toFixed(2)}%</div>
+                      <div className="text-gray-400">CPC: ${cCPC.toFixed(2)}</div>
                     </div>
                   )}
                 </div>

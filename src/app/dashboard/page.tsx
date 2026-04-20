@@ -30,7 +30,7 @@ export default function DashboardPage() {
           supabase.from('tasks').select('id,status,due_date').eq('brand_id', b.id),
           supabase.from('content_items').select('id').eq('brand_id', b.id),
           supabase.from('meeting_minutes').select('id').eq('brand_id', b.id).gte('meeting_date', monthStart),
-          supabase.from('ad_campaigns').select('id').eq('brand_id', b.id).eq('status', 'active'),
+          supabase.from('ad_campaigns').select('id').eq('brand_id', b.id),
           supabase.from('brand_influencer_campaigns').select('id').eq('brand_id', b.id),
           supabase.from('shoot_briefs').select('id').eq('brand_id', b.id),
         ]);
