@@ -5,25 +5,59 @@ import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { Users, Plus, Trash2, Edit2, Instagram, Star, TrendingUp } from 'lucide-react';
+import { Users, Plus, Edit2, Instagram, Star, TrendingUp, Search, Database, Briefcase } from 'lucide-react';
+
+type MainTab = 'campaigns' | 'database';
 
 interface Campaign { id: string; campaign_name: string | null; status: string; agreed_rate: number | null; post_date: string | null; post_url: string | null; views: number | null; likes: number | null; reach: number | null; notes: string | null; influencer: { id: string; name: string; instagram_handle: string | null; tier: string | null; followers_ig: number | null; engagement_rate: number | null } }
+
+interface Influencer { id: string; name: string; instagram_handle: string | null; tiktok_handle: string | null; lemon8_handle: string | null; xhs_handle: string | null; tier: string | null; followers_ig: number | null; followers_tiktok: number | null; followers_lemon8: number | null; followers_xhs: number | null; email: string | null; phone: string | null; influencer_type: string | null; rate_info: string | null; reel_views: string | null; notes: string | null }
 
 const TIERS = [{ value: 'nano', label: 'Nano (1K-10K)' }, { value: 'micro', label: 'Micro (10K-50K)' }, { value: 'mid', label: 'Mid (50K-500K)' }, { value: 'macro', label: 'Macro (500K-1M)' }, { value: 'mega', label: 'Mega (1M+)' }];
 const STATUSES = [{ value: 'prospecting', label: 'Prospecting' }, { value: 'contacted', label: 'Contacted' }, { value: 'negotiating', label: 'Negotiating' }, { value: 'confirmed', label: 'Confirmed' }, { value: 'active', label: 'Active' }, { value: 'completed', label: 'Completed' }, { value: 'declined', label: 'Declined' }];
 
+function formatFollowers(n: number | null) {
+  if (!n) return '-';
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toString();
+}
+
 export default function InfluencersPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
+  const [mainTab, setMainTab] = useState<MainTab>('database');
   const [brandId, setBrandId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [influencers, setInfluencers] = useState<Influencer[]>([]);
+  const [totalInfluencers, setTotalInfluencers] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [dbLoading, setDbLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [filter, setFilter] = useState<string>('all');
+  const [dbSearch, setDbSearch] = useState('');
+  const [dbTier, setDbTier] = useState('all');
+  const [dbPage, setDbPage] = useState(0);
 
   const supabase = createBrowserClient();
   const loadBrand = useCallback(async () => { const { data } = await supabase.from('brands').select('id').eq('slug', slug).single(); if (data) { setBrandId(data.id); return data.id; } return null; }, [slug, supabase]);
-  const loadData = useCallback(async (bid: string) => { setLoading(true); const res = await fetch(`/api/brands/${bid}/influencers`); if (res.ok) setCampaigns(await res.json()); setLoading(false); }, []);
-  useEffect(() => { loadBrand().then(bid => { if (bid) loadData(bid); }); }, [loadBrand, loadData]);
+  const loadCampaigns = useCallback(async (bid: string) => { setLoading(true); const res = await fetch(`/api/brands/${bid}/influencers`); if (res.ok) setCampaigns(await res.json()); setLoading(false); }, []);
+  const loadInfluencers = useCallback(async (search?: string, tier?: string, page?: number) => {
+    setDbLoading(true);
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (tier && tier !== 'all') params.set('tier', tier);
+    if (page) params.set('page', page.toString());
+    const res = await fetch(`/api/influencers?${params.toString()}`);
+    if (res.ok) { const d = await res.json(); setInfluencers(d.data || []); setTotalInfluencers(d.total || 0); }
+    setDbLoading(false);
+  }, []);
+
+  useEffect(() => { loadBrand().then(bid => { if (bid) loadCampaigns(bid); }); loadInfluencers(); }, [loadBrand, loadCampaigns, loadInfluencers]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { loadInfluencers(dbSearch, dbTier, dbPage); }, 300);
+    return () => clearTimeout(timer);
+  }, [dbSearch, dbTier, dbPage, loadInfluencers]);
 
   const [form, setForm] = useState({ influencer_name: '', instagram_handle: '', tier: 'micro', followers_ig: '', campaign_name: '', status: 'prospecting', agreed_rate: '', post_date: '', notes: '' });
   const resetForm = () => setForm({ influencer_name: '', instagram_handle: '', tier: 'micro', followers_ig: '', campaign_name: '', status: 'prospecting', agreed_rate: '', post_date: '', notes: '' });
@@ -32,7 +66,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
     if (!brandId) return;
     const payload = { ...form, followers_ig: form.followers_ig ? parseInt(form.followers_ig) : null, agreed_rate: form.agreed_rate ? parseFloat(form.agreed_rate) : null, post_date: form.post_date || null };
     await fetch(`/api/brands/${brandId}/influencers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    setShowModal(false); resetForm(); loadData(brandId);
+    setShowModal(false); resetForm(); loadCampaigns(brandId);
   };
 
   const filtered = filter === 'all' ? campaigns : campaigns.filter(c => c.status === filter);
@@ -43,65 +77,193 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        {[
-          { label: 'Total Campaigns', value: campaigns.length, icon: Users },
-          { label: 'Active This Month', value: thisMonth.length, icon: Star },
-          { label: 'Total Reach', value: totalReach > 1000 ? `${(totalReach / 1000).toFixed(1)}K` : totalReach, icon: TrendingUp },
-          { label: 'Posted', value: campaigns.filter(c => c.post_url).length, icon: Instagram },
-        ].map((s, i) => (
-          <div key={i} className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-gray-400 text-[10px] sm:text-xs mb-1"><s.icon size={14} />{s.label}</div>
-            <span className="text-xl sm:text-2xl font-bold text-white">{s.value}</span>
+      {/* Main Tab Toggle */}
+      <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit">
+        <button onClick={() => setMainTab('database')} className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${mainTab === 'database' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <span className="flex items-center gap-1.5 sm:gap-2"><Database size={14} /><span className="hidden sm:inline">KOL Database</span><span className="sm:hidden">Database</span></span>
+        </button>
+        <button onClick={() => setMainTab('campaigns')} className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${mainTab === 'campaigns' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <span className="flex items-center gap-1.5 sm:gap-2"><Briefcase size={14} /><span className="hidden sm:inline">Brand Campaigns</span><span className="sm:hidden">Campaigns</span></span>
+        </button>
+      </div>
+
+      {/* KOL DATABASE TAB */}
+      {mainTab === 'database' && (
+        <div className="space-y-4">
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1"><Database size={14} />Total KOLs</div>
+              <span className="text-xl sm:text-2xl font-bold text-white">{totalInfluencers}</span>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1"><Instagram size={14} />With IG</div>
+              <span className="text-xl sm:text-2xl font-bold text-purple-400">{influencers.filter(i => i.instagram_handle).length}+</span>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1"><TrendingUp size={14} />With TikTok</div>
+              <span className="text-xl sm:text-2xl font-bold text-blue-400">{influencers.filter(i => i.tiktok_handle).length}+</span>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1"><Star size={14} />Campaigns</div>
+              <span className="text-xl sm:text-2xl font-bold text-green-400">{campaigns.length}</span>
+            </div>
           </div>
-        ))}
-      </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-1 sm:pb-0">
-          {['all', 'confirmed', 'active', 'completed', 'prospecting'].map(s => (
-            <button key={s} onClick={() => setFilter(s)} className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === s ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}>
-              {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
-            </button>
-          ))}
-        </div>
-        <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0 self-end sm:self-auto"><Plus size={14} />Add KOL</button>
-      </div>
+          {/* Search & Filters */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="text" value={dbSearch} onChange={e => { setDbSearch(e.target.value); setDbPage(0); }} placeholder="Search by name or handle..." className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-purple-500" />
+            </div>
+            <select value={dbTier} onChange={e => { setDbTier(e.target.value); setDbPage(0); }} className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm">
+              <option value="all" className="bg-[#1a1a2e]">All Tiers</option>
+              {TIERS.map(t => <option key={t.value} value={t.value} className="bg-[#1a1a2e]">{t.label}</option>)}
+            </select>
+          </div>
 
-      {filtered.length === 0 ? (
-        <EmptyState icon={Users} title="No influencer campaigns" description="Add KOLs and track their campaigns for this brand" action={{ label: 'Add KOL', onClick: () => { resetForm(); setShowModal(true); } }} />
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-          {filtered.map(c => (
-            <div key={c.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:border-white/20 transition">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                  <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-xs sm:text-sm shrink-0">{c.influencer.name.charAt(0)}</div>
-                  <div className="min-w-0">
-                    <h3 className="text-white font-medium text-sm truncate">{c.influencer.name}</h3>
-                    {c.influencer.instagram_handle && <span className="text-[10px] sm:text-xs text-gray-400">@{c.influencer.instagram_handle}</span>}
+          {/* Influencer Grid */}
+          {dbLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[...Array(6)].map((_, i) => <div key={i} className="h-32 bg-white/5 rounded-lg animate-pulse" />)}
+            </div>
+          ) : influencers.length === 0 ? (
+            <EmptyState icon={Users} title="No KOLs found" description={dbSearch ? `No results for "${dbSearch}"` : "No influencers in the database yet"} />
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {influencers.map(inf => (
+                  <div key={inf.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:border-purple-500/30 transition group">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                        {(inf.name || inf.instagram_handle || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-medium text-white truncate">{inf.name || inf.instagram_handle || 'Unknown'}</h3>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {inf.tier && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 capitalize">{inf.tier}</span>}
+                          {inf.influencer_type && <span className="text-[10px] text-gray-500 truncate max-w-[120px]">{inf.influencer_type}</span>}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Platform handles */}
+                    <div className="mt-2.5 space-y-1">
+                      {inf.instagram_handle && (
+                        <div className="flex items-center justify-between text-[10px] sm:text-xs">
+                          <span className="text-gray-400">📸 @{inf.instagram_handle.replace('@', '')}</span>
+                          <span className="text-white font-medium">{formatFollowers(inf.followers_ig)}</span>
+                        </div>
+                      )}
+                      {inf.tiktok_handle && (
+                        <div className="flex items-center justify-between text-[10px] sm:text-xs">
+                          <span className="text-gray-400">🎵 @{inf.tiktok_handle.replace('@', '')}</span>
+                          <span className="text-white font-medium">{formatFollowers(inf.followers_tiktok)}</span>
+                        </div>
+                      )}
+                      {inf.lemon8_handle && (
+                        <div className="flex items-center justify-between text-[10px] sm:text-xs">
+                          <span className="text-gray-400">🍋 {inf.lemon8_handle}</span>
+                          <span className="text-white font-medium">{formatFollowers(inf.followers_lemon8)}</span>
+                        </div>
+                      )}
+                      {inf.xhs_handle && (
+                        <div className="flex items-center justify-between text-[10px] sm:text-xs">
+                          <span className="text-gray-400">📕 {inf.xhs_handle}</span>
+                          <span className="text-white font-medium">{formatFollowers(inf.followers_xhs)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Contact & rate */}
+                    <div className="mt-2 flex items-center gap-2 text-[10px] text-gray-500 flex-wrap">
+                      {inf.email && <span>📧 {inf.email}</span>}
+                      {inf.phone && <span>📱 {inf.phone}</span>}
+                      {inf.rate_info && <span>💰 {inf.rate_info}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {totalInfluencers > 50 && (
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-gray-400">Showing {dbPage * 50 + 1}-{Math.min((dbPage + 1) * 50, totalInfluencers)} of {totalInfluencers}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setDbPage(p => Math.max(0, p - 1))} disabled={dbPage === 0} className="px-3 py-1.5 text-xs bg-white/5 rounded-lg text-gray-400 hover:text-white disabled:opacity-30">← Prev</button>
+                    <button onClick={() => setDbPage(p => p + 1)} disabled={(dbPage + 1) * 50 >= totalInfluencers} className="px-3 py-1.5 text-xs bg-white/5 rounded-lg text-gray-400 hover:text-white disabled:opacity-30">Next →</button>
                   </div>
                 </div>
-                <StatusBadge status={c.status} />
-              </div>
-              <div className="mt-2 sm:mt-3 flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs text-gray-400 flex-wrap">
-                {c.influencer.tier && <span className="capitalize">{c.influencer.tier}</span>}
-                {c.influencer.followers_ig && <span>{(c.influencer.followers_ig / 1000).toFixed(1)}K</span>}
-                {c.agreed_rate && <span>${c.agreed_rate}</span>}
-                {c.post_date && <span>{new Date(c.post_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-              </div>
-              {c.campaign_name && <p className="text-[10px] sm:text-xs text-gray-300 mt-1 sm:mt-2">Campaign: {c.campaign_name}</p>}
-              {(c.views || c.likes || c.reach) && (
-                <div className="flex gap-3 sm:gap-4 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-gray-400">
-                  {c.views && <span>👁 {c.views.toLocaleString()}</span>}
-                  {c.likes && <span>❤️ {c.likes.toLocaleString()}</span>}
-                  {c.reach && <span>📊 {c.reach.toLocaleString()}</span>}
-                </div>
               )}
-              {c.post_url && <a href={c.post_url} target="_blank" rel="noopener" className="text-[10px] sm:text-xs text-purple-400 hover:text-purple-300 mt-1.5 sm:mt-2 inline-block">View Post →</a>}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* CAMPAIGNS TAB */}
+      {mainTab === 'campaigns' && (
+        <div className="space-y-4 sm:space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            {[
+              { label: 'Total Campaigns', value: campaigns.length, icon: Users },
+              { label: 'Active This Month', value: thisMonth.length, icon: Star },
+              { label: 'Total Reach', value: totalReach > 1000 ? `${(totalReach / 1000).toFixed(1)}K` : totalReach, icon: TrendingUp },
+              { label: 'Posted', value: campaigns.filter(c => c.post_url).length, icon: Instagram },
+            ].map((s, i) => (
+              <div key={i} className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+                <div className="flex items-center gap-1.5 sm:gap-2 text-gray-400 text-[10px] sm:text-xs mb-1"><s.icon size={14} />{s.label}</div>
+                <span className="text-xl sm:text-2xl font-bold text-white">{s.value}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-1 sm:pb-0">
+              {['all', 'confirmed', 'active', 'completed', 'prospecting'].map(s => (
+                <button key={s} onClick={() => setFilter(s)} className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === s ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}>
+                  {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+                </button>
+              ))}
             </div>
-          ))}
+            <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0 self-end sm:self-auto"><Plus size={14} />Add KOL</button>
+          </div>
+
+          {filtered.length === 0 ? (
+            <EmptyState icon={Users} title="No influencer campaigns" description="Add KOLs and track their campaigns for this brand" action={{ label: 'Add KOL', onClick: () => { resetForm(); setShowModal(true); } }} />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              {filtered.map(c => (
+                <div key={c.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:border-white/20 transition">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-xs sm:text-sm shrink-0">{c.influencer.name.charAt(0)}</div>
+                      <div className="min-w-0">
+                        <h3 className="text-white font-medium text-sm truncate">{c.influencer.name}</h3>
+                        {c.influencer.instagram_handle && <span className="text-[10px] sm:text-xs text-gray-400">@{c.influencer.instagram_handle}</span>}
+                      </div>
+                    </div>
+                    <StatusBadge status={c.status} />
+                  </div>
+                  <div className="mt-2 sm:mt-3 flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs text-gray-400 flex-wrap">
+                    {c.influencer.tier && <span className="capitalize">{c.influencer.tier}</span>}
+                    {c.influencer.followers_ig && <span>{formatFollowers(c.influencer.followers_ig)}</span>}
+                    {c.agreed_rate && <span>${c.agreed_rate}</span>}
+                    {c.post_date && <span>{new Date(c.post_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                  </div>
+                  {c.campaign_name && <p className="text-[10px] sm:text-xs text-gray-300 mt-1 sm:mt-2">Campaign: {c.campaign_name}</p>}
+                  {(c.views || c.likes || c.reach) && (
+                    <div className="flex gap-3 sm:gap-4 mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-gray-400">
+                      {c.views && <span>👁 {c.views.toLocaleString()}</span>}
+                      {c.likes && <span>❤️ {c.likes.toLocaleString()}</span>}
+                      {c.reach && <span>📊 {c.reach.toLocaleString()}</span>}
+                    </div>
+                  )}
+                  {c.post_url && <a href={c.post_url} target="_blank" rel="noopener" className="text-[10px] sm:text-xs text-purple-400 hover:text-purple-300 mt-1.5 sm:mt-2 inline-block">View Post →</a>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

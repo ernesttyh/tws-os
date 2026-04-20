@@ -24,7 +24,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
   const [brandId, setBrandId] = useState<string | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [shoots, setShoots] = useState<ShootBrief[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState(MONTHS[new Date().getMonth()]);
+  const [selectedMonth, setSelectedMonth] = useState('All');
   const [loading, setLoading] = useState(true);
   const [showContentModal, setShowContentModal] = useState(false);
   const [showShootModal, setShowShootModal] = useState(false);
@@ -41,8 +41,9 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
 
   const loadData = useCallback(async (bid: string) => {
     setLoading(true);
+    const monthParam = selectedMonth !== 'All' ? `?month=${selectedMonth}` : '';
     const [contentRes, shootsRes] = await Promise.all([
-      fetch(`/api/brands/${bid}/content?month=${selectedMonth}`),
+      fetch(`/api/brands/${bid}/content${monthParam}`),
       fetch(`/api/brands/${bid}/shoots`),
     ]);
     if (contentRes.ok) setContent(await contentRes.json());
@@ -59,7 +60,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
 
   const saveContent = async () => {
     if (!brandId) return;
-    const payload = { ...contentForm, month: selectedMonth };
+    const payload = { ...contentForm, month: selectedMonth === 'All' ? MONTHS[new Date().getMonth()] : selectedMonth };
     Object.keys(payload).forEach(k => { if (payload[k as keyof typeof payload] === '') (payload as Record<string, unknown>)[k] = null; });
     if (editContent) {
       await fetch(`/api/brands/${brandId}/content/${editContent.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -107,6 +108,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
               <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-white/5 border border-white/10 rounded-lg px-2 sm:px-3 py-2 text-white text-xs sm:text-sm">
+                <option value="All" className="bg-[#1a1a2e]">All Months</option>
                 {MONTHS.map(m => <option key={m} value={m} className="bg-[#1a1a2e]">{m}</option>)}
               </select>
               <div className="flex gap-1 bg-white/5 rounded-lg p-0.5">
@@ -119,7 +121,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
           </div>
 
           {content.length === 0 ? (
-            <EmptyState icon={Image} title={`No content for ${selectedMonth}`} description="Create content items or sync from Google Sheets" action={{ label: 'Add Content', onClick: () => { resetContentForm(); setShowContentModal(true); } }} />
+            <EmptyState icon={Image} title={selectedMonth === 'All' ? 'No content yet' : `No content for ${selectedMonth}`} description="Create content items or sync from Google Sheets" action={{ label: 'Add Content', onClick: () => { resetContentForm(); setShowContentModal(true); } }} />
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {content.map(c => (
@@ -128,6 +130,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                     <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
                       <StatusBadge status={c.content_type} />
                       <StatusBadge status={c.status} />
+                      {selectedMonth === 'All' && c.month && <span className="text-[9px] px-1.5 py-0.5 rounded bg-white/5 text-gray-500">{c.month}</span>}
                     </div>
                     <div className="flex gap-1">
                       <button onClick={() => { setEditContent(c); setContentForm({ title: c.title || '', contents: c.contents || '', content_type: c.content_type, status: c.status, date: c.date || '', day_of_week: c.day_of_week || '', caption: c.caption || '', hashtags: c.hashtags || '', link: c.link || '', schedule_time: c.schedule_time || '', comments: c.comments || '' }); setShowContentModal(true); }} className="p-1 hover:bg-white/10 rounded text-gray-400"><Edit2 size={12} /></button>
@@ -150,6 +153,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                 <table className="w-full text-sm">
                   <thead><tr className="border-b border-white/10">
                     <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">Date</th>
+                    {selectedMonth === 'All' && <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">Month</th>}
                     <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">Type</th>
                     <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">Content</th>
                     <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400 hidden sm:table-cell">Status</th>
@@ -159,6 +163,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                     {content.map(c => (
                       <tr key={c.id} className="border-b border-white/5 hover:bg-white/5 transition">
                         <td className="py-3 px-3 sm:px-4 text-gray-300 text-xs">{c.date ? new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '-'}</td>
+                        {selectedMonth === 'All' && <td className="py-3 px-3 sm:px-4 text-gray-400 text-xs">{c.month}</td>}
                         <td className="py-3 px-3 sm:px-4"><StatusBadge status={c.content_type} /></td>
                         <td className="py-3 px-3 sm:px-4 text-gray-300 max-w-[150px] sm:max-w-[300px] truncate text-xs sm:text-sm">{c.title || c.contents?.slice(0, 60) || '-'}</td>
                         <td className="py-3 px-3 sm:px-4 hidden sm:table-cell"><StatusBadge status={c.status} /></td>
@@ -202,7 +207,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                   </div>
                   {s.location && <div className="text-[10px] sm:text-xs text-gray-400 mb-1 sm:mb-2">📍 {s.location}</div>}
                   {s.talent && <div className="text-[10px] sm:text-xs text-gray-400 mb-1 sm:mb-2">🎭 Talent: {s.talent}</div>}
-                  {s.shot_list && <div className="text-[10px] sm:text-xs text-gray-300 bg-black/20 rounded p-2 whitespace-pre-wrap">{s.shot_list}</div>}
+                  {s.shot_list && <div className="text-[10px] sm:text-xs text-gray-300 bg-black/20 rounded p-2 whitespace-pre-wrap line-clamp-4">{s.shot_list}</div>}
                 </div>
               ))}
             </div>
