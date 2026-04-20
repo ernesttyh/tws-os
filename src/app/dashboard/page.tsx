@@ -2,12 +2,18 @@
 import { useState, useEffect } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import Link from 'next/link';
+import AMDashboard from '@/components/dashboards/AMDashboard';
+import DesignerDashboard from '@/components/dashboards/DesignerDashboard';
+
+type ViewMode = 'admin' | 'am' | 'designer';
 
 interface BrandSummary { id: string; name: string; slug: string; brand_group: string; tasks_total: number; tasks_overdue: number; content_count: number; meetings_this_month: number; active_ads: number; kol_count: number; shoots_count: number; health: number }
 
 export default function DashboardPage() {
   const [brands, setBrands] = useState<BrandSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('admin');
   const supabase = createBrowserClient();
 
   useEffect(() => {
@@ -15,6 +21,23 @@ export default function DashboardPage() {
       // Wait for auth session to be ready
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        setLoading(false);
+        return;
+      }
+
+      // Fetch team member record for role detection
+      const { data: member } = await supabase
+        .from('team_members')
+        .select('id, name, role')
+        .eq('auth_user_id', session.user.id)
+        .single();
+
+      if (member) {
+        setUserRole(member.role);
+      }
+
+      // Role-based: non-admin roles don't need to load all brands
+      if (member && !['master_admin', 'admin'].includes(member.role)) {
         setLoading(false);
         return;
       }
@@ -82,8 +105,45 @@ export default function DashboardPage() {
 
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-24 bg-white/5 rounded-xl" /><div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-16 bg-white/5 rounded-xl" />)}</div></div></div>;
 
+  // Role-based view routing (non-admin roles)
+  if (userRole === 'account_manager' || userRole === 'manager') return <AMDashboard />;
+  if (userRole === 'designer' || userRole === 'videographer') return <DesignerDashboard />;
+  if (userRole === 'intern') return <AMDashboard />;
+
+  // Master admin view switcher
+  if (viewMode === 'am') return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit">
+        <button onClick={() => setViewMode('admin')} className="text-gray-400 px-3 py-1 text-xs rounded hover:text-white transition">Master View</button>
+        <button className="bg-purple-600 text-white px-3 py-1 rounded text-xs">AM View</button>
+        <button onClick={() => setViewMode('designer')} className="text-gray-400 px-3 py-1 text-xs rounded hover:text-white transition">Designer View</button>
+      </div>
+      <AMDashboard />
+    </div>
+  );
+
+  if (viewMode === 'designer') return (
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit">
+        <button onClick={() => setViewMode('admin')} className="text-gray-400 px-3 py-1 text-xs rounded hover:text-white transition">Master View</button>
+        <button onClick={() => setViewMode('am')} className="text-gray-400 px-3 py-1 text-xs rounded hover:text-white transition">AM View</button>
+        <button className="bg-purple-600 text-white px-3 py-1 rounded text-xs">Designer View</button>
+      </div>
+      <DesignerDashboard />
+    </div>
+  );
+
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* View Switcher for Master Admin */}
+      {(userRole === 'master_admin' || userRole === 'admin') && (
+        <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit">
+          <button className="bg-purple-600 text-white px-3 py-1 rounded text-xs">Master View</button>
+          <button onClick={() => setViewMode('am')} className="text-gray-400 px-3 py-1 text-xs rounded hover:text-white transition">AM View</button>
+          <button onClick={() => setViewMode('designer')} className="text-gray-400 px-3 py-1 text-xs rounded hover:text-white transition">Designer View</button>
+        </div>
+      )}
+
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-white">Dashboard</h1>
         <p className="text-gray-400 text-xs sm:text-sm">Account overview across all brands</p>

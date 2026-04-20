@@ -27,6 +27,10 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const [expandedMeeting, setExpandedMeeting] = useState<string | null>(null);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
 
+  // Drag and drop state
+  const [draggedTask, setDraggedTask] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+
   const supabase = createBrowserClient();
 
   const loadBrand = useCallback(async () => {
@@ -108,7 +112,38 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     loadData(brandId);
   };
 
+  // Drag and drop handler
+  const handleDrop = async (newStatus: string) => {
+    if (!draggedTask || !brandId) return;
+    const task = tasks.find(t => t.id === draggedTask);
+    if (!task || task.status === newStatus) {
+      setDraggedTask(null);
+      setDropTarget(null);
+      return;
+    }
+
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === draggedTask ? { ...t, status: newStatus } : t));
+    setDraggedTask(null);
+    setDropTarget(null);
+
+    try {
+      const res = await fetch(`/api/brands/${brandId}/tasks/${draggedTask}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, ...(newStatus === 'done' ? { completed_at: new Date().toISOString() } : { completed_at: null }) }),
+      });
+      if (!res.ok) {
+        // Revert on error
+        loadData(brandId);
+      }
+    } catch {
+      loadData(brandId);
+    }
+  };
+
   const taskStatuses = ['backlog', 'todo', 'in_progress', 'review', 'done'];
+  const statusLabels: Record<string, string> = { backlog: 'BACKLOG', todo: 'TODO', in_progress: 'IN PROGRESS', review: 'REVIEW', done: 'DONE' };
   const tasksByStatus = taskStatuses.reduce((acc, s) => { acc[s] = tasks.filter(t => t.status === s); return acc; }, {} as Record<string, Task[]>);
 
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-white/5 rounded w-48" /><div className="h-64 bg-white/5 rounded" /></div></div>;
@@ -179,7 +214,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         </div>
       )}
 
-      {/* TASKS TAB - Kanban Board */}
+      {/* TASKS TAB - Kanban Board with Drag & Drop */}
       {tab === 'tasks' && (
         <div className="space-y-3 sm:space-y-4">
           <div className="flex items-center justify-between gap-2">
@@ -190,15 +225,27 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
           </div>
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
             {taskStatuses.map(status => (
-              <div key={status} className="bg-white/5 rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
+              <div
+                key={status}
+                onDragOver={(e) => { e.preventDefault(); setDropTarget(status); }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={() => handleDrop(status)}
+                className={`rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink transition-colors border-2 ${dropTarget === status ? 'border-purple-500 bg-purple-500/5' : 'border-transparent bg-white/5'}`}
+              >
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{status.replace('_', ' ')}</span>
+                  <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{statusLabels[status] || status.replace('_', ' ')}</span>
                   <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
                 </div>
                 <div className="space-y-2">
                   {(tasksByStatus[status] || []).map(task => (
-                    <div key={task.id} className="bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-pointer group"
-                         onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                    <div
+                      key={task.id}
+                      draggable
+                      onDragStart={() => setDraggedTask(task.id)}
+                      onDragEnd={() => { setDraggedTask(null); setDropTarget(null); }}
+                      className={`bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-grab active:cursor-grabbing group ${draggedTask === task.id ? 'opacity-50' : ''}`}
+                      onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}
+                    >
                       <div className="flex items-start justify-between">
                         <span className="text-xs sm:text-sm text-white font-medium leading-tight">{task.title}</span>
                         <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
