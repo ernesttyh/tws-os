@@ -49,7 +49,7 @@ export default function AMDashboard() {
 
       const assignedBrands = assignments
         .map(a => a.brand)
-        .filter((b): b is { id: string; name: string; slug: string; brand_group: string; status: string } => !!b && b.status === 'active');
+        .map((b: any) => b).filter((b: any) => !!b && b.status === 'active') as { id: string; name: string; slug: string; brand_group: string; status: string }[];
 
       const summaries: BrandSummary[] = await Promise.all(assignedBrands.map(async (b) => {
         const [tasks, content, meetings, ads, kol, shoots] = await Promise.all([
