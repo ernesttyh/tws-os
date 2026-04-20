@@ -5,16 +5,54 @@ import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { Users, Plus, Edit2, Instagram, Star, TrendingUp, Search, Database, Briefcase } from 'lucide-react';
+import { Users, Plus, Edit2, Instagram, Star, TrendingUp, Search, Database, Briefcase, CalendarCheck, Check, X, ExternalLink } from 'lucide-react';
 
-type MainTab = 'campaigns' | 'database';
+type MainTab = 'tracking' | 'database' | 'campaigns';
 
 interface Campaign { id: string; campaign_name: string | null; status: string; agreed_rate: number | null; post_date: string | null; post_url: string | null; views: number | null; likes: number | null; reach: number | null; notes: string | null; influencer: { id: string; name: string; instagram_handle: string | null; tier: string | null; followers_ig: number | null; engagement_rate: number | null } }
 
 interface Influencer { id: string; name: string; instagram_handle: string | null; tiktok_handle: string | null; lemon8_handle: string | null; xhs_handle: string | null; tier: string | null; followers_ig: number | null; followers_tiktok: number | null; followers_lemon8: number | null; followers_xhs: number | null; email: string | null; phone: string | null; influencer_type: string | null; rate_info: string | null; reel_views: string | null; notes: string | null }
 
+interface Invitation {
+  id: string;
+  brand_id: string;
+  influencer_id: string;
+  event_month: string;
+  invited: boolean;
+  confirmed: boolean;
+  attended: boolean;
+  posted: boolean;
+  post_url: string | null;
+  notes: string | null;
+  created_at: string;
+  influencer: {
+    id: string;
+    name: string;
+    instagram_handle: string | null;
+    tiktok_handle: string | null;
+    tier: string | null;
+    followers_ig: number | null;
+  };
+}
+
 const TIERS = [{ value: 'nano', label: 'Nano (1K-10K)' }, { value: 'micro', label: 'Micro (10K-50K)' }, { value: 'mid', label: 'Mid (50K-500K)' }, { value: 'macro', label: 'Macro (500K-1M)' }, { value: 'mega', label: 'Mega (1M+)' }];
 const STATUSES = [{ value: 'prospecting', label: 'Prospecting' }, { value: 'contacted', label: 'Contacted' }, { value: 'negotiating', label: 'Negotiating' }, { value: 'confirmed', label: 'Confirmed' }, { value: 'active', label: 'Active' }, { value: 'completed', label: 'Completed' }, { value: 'declined', label: 'Declined' }];
+
+const TRACKING_MONTHS = (() => {
+  const months: string[] = [];
+  const now = new Date();
+  for (let i = -3; i <= 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  return months;
+})();
+
+function formatTrackingMonth(m: string): string {
+  const [yr, mo] = m.split('-');
+  const date = new Date(parseInt(yr), parseInt(mo) - 1, 1);
+  return date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
 
 function formatFollowers(n: number | null) {
   if (!n) return '-';
@@ -25,7 +63,7 @@ function formatFollowers(n: number | null) {
 
 export default function InfluencersPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const [mainTab, setMainTab] = useState<MainTab>('database');
+  const [mainTab, setMainTab] = useState<MainTab>('tracking');
   const [brandId, setBrandId] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [influencers, setInfluencers] = useState<Influencer[]>([]);
@@ -37,6 +75,16 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
   const [dbSearch, setDbSearch] = useState('');
   const [dbTier, setDbTier] = useState('all');
   const [dbPage, setDbPage] = useState(0);
+
+  // Monthly tracking state
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const [trackingMonth, setTrackingMonth] = useState(currentMonth);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteSearch, setInviteSearch] = useState('');
+  const [inviteResults, setInviteResults] = useState<Influencer[]>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   const supabase = createBrowserClient();
   const loadBrand = useCallback(async () => { const { data } = await supabase.from('brands').select('id').eq('slug', slug).single(); if (data) { setBrandId(data.id); return data.id; } return null; }, [slug, supabase]);
@@ -52,13 +100,92 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
     setDbLoading(false);
   }, []);
 
-  useEffect(() => { loadBrand().then(bid => { if (bid) loadCampaigns(bid); }); loadInfluencers(); }, [loadBrand, loadCampaigns, loadInfluencers]);
+  const loadInvitations = useCallback(async (bid: string, month: string) => {
+    setTrackingLoading(true);
+    const { data, error } = await supabase
+      .from('influencer_invitations')
+      .select('*, influencer:influencers(id, name, instagram_handle, tiktok_handle, tier, followers_ig)')
+      .eq('brand_id', bid)
+      .eq('event_month', month)
+      .order('created_at', { ascending: true });
+    if (!error && data) setInvitations(data as Invitation[]);
+    else setInvitations([]);
+    setTrackingLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { loadBrand().then(bid => { if (bid) { loadCampaigns(bid); loadInvitations(bid, trackingMonth); } }); loadInfluencers(); }, [loadBrand, loadCampaigns, loadInfluencers, loadInvitations, trackingMonth]);
 
   useEffect(() => {
     const timer = setTimeout(() => { loadInfluencers(dbSearch, dbTier, dbPage); }, 300);
     return () => clearTimeout(timer);
   }, [dbSearch, dbTier, dbPage, loadInfluencers]);
 
+  useEffect(() => {
+    if (brandId) loadInvitations(brandId, trackingMonth);
+  }, [trackingMonth, brandId, loadInvitations]);
+
+  // Toggle invitation field
+  const toggleInvitationField = async (invId: string, field: 'invited' | 'confirmed' | 'attended' | 'posted', current: boolean) => {
+    const { error } = await supabase
+      .from('influencer_invitations')
+      .update({ [field]: !current })
+      .eq('id', invId);
+    if (!error && brandId) loadInvitations(brandId, trackingMonth);
+  };
+
+  // Update post URL
+  const updatePostUrl = async (invId: string, url: string) => {
+    await supabase
+      .from('influencer_invitations')
+      .update({ post_url: url || null })
+      .eq('id', invId);
+  };
+
+  // Invite KOL search
+  const searchForInvite = useCallback(async (query: string) => {
+    if (!query.trim()) { setInviteResults([]); return; }
+    setInviteLoading(true);
+    const res = await fetch(`/api/influencers?search=${encodeURIComponent(query)}&limit=10`);
+    if (res.ok) { const d = await res.json(); setInviteResults(d.data || []); }
+    setInviteLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { searchForInvite(inviteSearch); }, 300);
+    return () => clearTimeout(timer);
+  }, [inviteSearch, searchForInvite]);
+
+  const createInvitation = async (influencerId: string) => {
+    if (!brandId) return;
+    // Check if already invited this month
+    const existing = invitations.find(inv => inv.influencer_id === influencerId);
+    if (existing) { alert('This KOL is already invited for this month.'); return; }
+    const { error } = await supabase
+      .from('influencer_invitations')
+      .insert({
+        brand_id: brandId,
+        influencer_id: influencerId,
+        event_month: trackingMonth,
+        invited: true,
+        confirmed: false,
+        attended: false,
+        posted: false,
+      });
+    if (!error) {
+      loadInvitations(brandId, trackingMonth);
+      setShowInviteModal(false);
+      setInviteSearch('');
+      setInviteResults([]);
+    }
+  };
+
+  const deleteInvitation = async (invId: string) => {
+    if (!confirm('Remove this invitation?')) return;
+    await supabase.from('influencer_invitations').delete().eq('id', invId);
+    if (brandId) loadInvitations(brandId, trackingMonth);
+  };
+
+  // Campaign form
   const [form, setForm] = useState({ influencer_name: '', instagram_handle: '', tier: 'micro', followers_ig: '', campaign_name: '', status: 'prospecting', agreed_rate: '', post_date: '', notes: '' });
   const resetForm = () => setForm({ influencer_name: '', instagram_handle: '', tier: 'micro', followers_ig: '', campaign_name: '', status: 'prospecting', agreed_rate: '', post_date: '', notes: '' });
 
@@ -73,12 +200,23 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
   const thisMonth = campaigns.filter(c => { if (!c.post_date) return false; const d = new Date(c.post_date); const now = new Date(); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
   const totalReach = campaigns.reduce((sum, c) => sum + (c.reach || 0), 0);
 
+  // Tracking stats
+  const trackingStats = {
+    invited: invitations.filter(inv => inv.invited).length,
+    confirmed: invitations.filter(inv => inv.confirmed).length,
+    attended: invitations.filter(inv => inv.attended).length,
+    posted: invitations.filter(inv => inv.posted).length,
+  };
+
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
 
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Main Tab Toggle */}
       <div className="flex gap-1 bg-white/5 rounded-lg p-1 w-fit">
+        <button onClick={() => setMainTab('tracking')} className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${mainTab === 'tracking' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+          <span className="flex items-center gap-1.5 sm:gap-2"><CalendarCheck size={14} /><span className="hidden sm:inline">Monthly Tracking</span><span className="sm:hidden">Tracking</span></span>
+        </button>
         <button onClick={() => setMainTab('database')} className={`px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition ${mainTab === 'database' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
           <span className="flex items-center gap-1.5 sm:gap-2"><Database size={14} /><span className="hidden sm:inline">KOL Database</span><span className="sm:hidden">Database</span></span>
         </button>
@@ -86,6 +224,167 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
           <span className="flex items-center gap-1.5 sm:gap-2"><Briefcase size={14} /><span className="hidden sm:inline">Brand Campaigns</span><span className="sm:hidden">Campaigns</span></span>
         </button>
       </div>
+
+      {/* MONTHLY TRACKING TAB */}
+      {mainTab === 'tracking' && (
+        <div className="space-y-4">
+          {/* Month Selector + Invite Button */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <select
+                value={trackingMonth}
+                onChange={e => setTrackingMonth(e.target.value)}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-xs sm:text-sm"
+              >
+                {TRACKING_MONTHS.map(m => (
+                  <option key={m} value={m} className="bg-[#1a1a2e]">{formatTrackingMonth(m)}</option>
+                ))}
+              </select>
+              <span className="text-xs sm:text-sm text-gray-400">{invitations.length} KOLs</span>
+            </div>
+            <button
+              onClick={() => { setShowInviteModal(true); setInviteSearch(''); setInviteResults([]); }}
+              className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition self-end sm:self-auto"
+            >
+              <Plus size={14} /><span className="hidden sm:inline">Invite KOL</span><span className="sm:hidden">Invite</span>
+            </button>
+          </div>
+
+          {/* Stats Strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1">📨 Invited</div>
+              <span className="text-xl sm:text-2xl font-bold text-white">{trackingStats.invited}</span>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1">✅ Confirmed</div>
+              <span className="text-xl sm:text-2xl font-bold text-green-400">{trackingStats.confirmed}</span>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1">🎯 Attended</div>
+              <span className="text-xl sm:text-2xl font-bold text-blue-400">{trackingStats.attended}</span>
+            </div>
+            <div className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+              <div className="flex items-center gap-1.5 text-gray-400 text-[10px] sm:text-xs mb-1">📱 Posted</div>
+              <span className="text-xl sm:text-2xl font-bold text-purple-400">{trackingStats.posted}</span>
+            </div>
+          </div>
+
+          {/* Invitations Table */}
+          {trackingLoading ? (
+            <div className="animate-pulse space-y-3">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-white/5 rounded-lg" />)}
+            </div>
+          ) : invitations.length === 0 ? (
+            <EmptyState
+              icon={CalendarCheck}
+              title={`No KOL invitations for ${formatTrackingMonth(trackingMonth)}`}
+              description="Invite KOLs from the database to track their status this month"
+              action={{ label: 'Invite KOL', onClick: () => { setShowInviteModal(true); setInviteSearch(''); setInviteResults([]); } }}
+            />
+          ) : (
+            <div className="bg-white/5 rounded-lg border border-white/10 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/10">
+                      <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">KOL</th>
+                      <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400 hidden sm:table-cell">Handle</th>
+                      <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Invited</th>
+                      <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Confirmed</th>
+                      <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Attended</th>
+                      <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Posted</th>
+                      <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400 hidden sm:table-cell">Post URL</th>
+                      <th className="text-right py-3 px-3 text-xs font-medium text-gray-400">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invitations.map(inv => (
+                      <tr key={inv.id} className="border-b border-white/5 hover:bg-white/5 transition">
+                        <td className="py-3 px-3 sm:px-4">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-[10px] sm:text-xs shrink-0">
+                              {(inv.influencer?.name || '?').charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-white text-xs sm:text-sm font-medium truncate block">{inv.influencer?.name || 'Unknown'}</span>
+                              {inv.influencer?.tier && <span className="text-[9px] sm:text-[10px] text-gray-500 capitalize">{inv.influencer.tier}</span>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 sm:px-4 hidden sm:table-cell">
+                          <div className="text-xs text-gray-400 space-y-0.5">
+                            {inv.influencer?.instagram_handle && <div>📸 @{inv.influencer.instagram_handle.replace('@', '')}</div>}
+                            {inv.influencer?.tiktok_handle && <div>🎵 @{inv.influencer.tiktok_handle.replace('@', '')}</div>}
+                          </div>
+                        </td>
+                        <td className="py-3 px-2 sm:px-3 text-center">
+                          <button
+                            onClick={() => toggleInvitationField(inv.id, 'invited', inv.invited)}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.invited ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-white/5 text-gray-600 hover:bg-white/10'}`}
+                          >
+                            {inv.invited ? <Check size={14} /> : <X size={14} />}
+                          </button>
+                        </td>
+                        <td className="py-3 px-2 sm:px-3 text-center">
+                          <button
+                            onClick={() => toggleInvitationField(inv.id, 'confirmed', inv.confirmed)}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.confirmed ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-white/5 text-gray-600 hover:bg-white/10'}`}
+                          >
+                            {inv.confirmed ? <Check size={14} /> : <X size={14} />}
+                          </button>
+                        </td>
+                        <td className="py-3 px-2 sm:px-3 text-center">
+                          <button
+                            onClick={() => toggleInvitationField(inv.id, 'attended', inv.attended)}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.attended ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30' : 'bg-white/5 text-gray-600 hover:bg-white/10'}`}
+                          >
+                            {inv.attended ? <Check size={14} /> : <X size={14} />}
+                          </button>
+                        </td>
+                        <td className="py-3 px-2 sm:px-3 text-center">
+                          <button
+                            onClick={() => toggleInvitationField(inv.id, 'posted', inv.posted)}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.posted ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30' : 'bg-white/5 text-gray-600 hover:bg-white/10'}`}
+                          >
+                            {inv.posted ? <Check size={14} /> : <X size={14} />}
+                          </button>
+                        </td>
+                        <td className="py-3 px-3 sm:px-4 hidden sm:table-cell">
+                          {inv.post_url ? (
+                            <a href={inv.post_url} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-400 hover:text-purple-300 inline-flex items-center gap-1">
+                              <ExternalLink size={11} /> View
+                            </a>
+                          ) : inv.posted ? (
+                            <input
+                              type="text"
+                              placeholder="Paste URL..."
+                              className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white w-full max-w-[140px] placeholder:text-gray-600 focus:outline-none focus:border-purple-500"
+                              onBlur={e => { if (e.target.value) updatePostUrl(inv.id, e.target.value); }}
+                              onKeyDown={e => { if (e.key === 'Enter') { const target = e.target as HTMLInputElement; if (target.value) { updatePostUrl(inv.id, target.value); target.blur(); } } }}
+                            />
+                          ) : (
+                            <span className="text-xs text-gray-600">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() => deleteInvitation(inv.id)}
+                            className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-red-400 transition"
+                            title="Remove invitation"
+                          >
+                            <X size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* KOL DATABASE TAB */}
       {mainTab === 'database' && (
@@ -267,6 +566,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
         </div>
       )}
 
+      {/* Campaign Modal */}
       <Modal open={showModal} onClose={() => setShowModal(false)} title="Add Influencer Campaign" size="lg">
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -288,6 +588,68 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
             <button onClick={save} disabled={!form.influencer_name} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Add KOL</button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Invite KOL Modal */}
+      <Modal open={showInviteModal} onClose={() => { setShowInviteModal(false); setInviteSearch(''); setInviteResults([]); }} title={`Invite KOL — ${formatTrackingMonth(trackingMonth)}`} size="md">
+        <div className="space-y-4">
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={inviteSearch}
+              onChange={e => setInviteSearch(e.target.value)}
+              placeholder="Search KOLs by name or handle..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-purple-500"
+              autoFocus
+            />
+          </div>
+
+          {inviteLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => <div key={i} className="h-12 bg-white/5 rounded-lg animate-pulse" />)}
+            </div>
+          ) : inviteResults.length === 0 && inviteSearch ? (
+            <p className="text-sm text-gray-500 text-center py-4">No KOLs found for &quot;{inviteSearch}&quot;</p>
+          ) : (
+            <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
+              {inviteResults.map(inf => {
+                const alreadyInvited = invitations.some(inv => inv.influencer_id === inf.id);
+                return (
+                  <div key={inf.id} className="flex items-center justify-between p-2.5 sm:p-3 bg-white/5 rounded-lg border border-white/10 hover:border-white/20 transition">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                        {(inf.name || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-sm text-white font-medium truncate block">{inf.name || 'Unknown'}</span>
+                        <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                          {inf.instagram_handle && <span>📸 @{inf.instagram_handle.replace('@', '')}</span>}
+                          {inf.tier && <span className="capitalize">{inf.tier}</span>}
+                          {inf.followers_ig && <span>{formatFollowers(inf.followers_ig)}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    {alreadyInvited ? (
+                      <span className="text-[10px] sm:text-xs text-green-400 px-2 py-1 bg-green-500/10 rounded">Invited ✓</span>
+                    ) : (
+                      <button
+                        onClick={() => createInvitation(inf.id)}
+                        className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition shrink-0"
+                      >
+                        Invite
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!inviteSearch && (
+            <p className="text-xs text-gray-500 text-center py-2">Type a name or handle to search the KOL database</p>
+          )}
         </div>
       </Modal>
     </div>

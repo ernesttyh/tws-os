@@ -1,14 +1,15 @@
 'use client';
-import { useState, useEffect, useCallback, use } from 'react';
+import { useState, useEffect, useCallback, useMemo, use } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
 import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { Image, Plus, Trash2, Edit2, Camera, Grid3x3, List } from 'lucide-react';
+import { Image, Plus, Trash2, Edit2, Camera, Grid3x3, List, ArrowRight } from 'lucide-react';
 
 type SubTab = 'calendar' | 'shoots';
 type ViewMode = 'grid' | 'list';
+type StatusFilter = 'all' | 'idea' | 'planned' | 'in_progress' | 'review' | 'approved' | 'scheduled' | 'posted';
 
 interface ContentItem { id: string; title: string | null; contents: string | null; content_type: string; status: string; date: string | null; day_of_week: string | null; caption: string | null; hashtags: string | null; link: string | null; schedule_time: string | null; month: string; comments: string | null }
 interface ShootBrief { id: string; title: string; shoot_date: string | null; shoot_time: string | null; location: string | null; status: string; shot_list: string | null; talent: string | null; client_requirements: string | null; notes: string | null }
@@ -17,10 +18,21 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const CONTENT_TYPES = [{ value: 'reel', label: '🎬 Reel' }, { value: 'carousel', label: '📱 Carousel' }, { value: 'static', label: '🖼 Static' }, { value: 'story', label: '📖 Story' }, { value: 'video', label: '🎥 Video' }, { value: 'tiktok', label: '🎵 TikTok' }, { value: 'blog', label: '✍️ Blog' }, { value: 'edm', label: '📧 EDM' }];
 const CONTENT_STATUSES = [{ value: 'idea', label: 'Idea' }, { value: 'planned', label: 'Planned' }, { value: 'in_progress', label: 'In Progress' }, { value: 'review', label: 'Review' }, { value: 'approved', label: 'Approved' }, { value: 'scheduled', label: 'Scheduled' }, { value: 'posted', label: 'Posted' }];
 
+const STATUS_COLORS: Record<string, string> = {
+  idea: 'bg-gray-500',
+  planned: 'bg-blue-500',
+  in_progress: 'bg-yellow-500',
+  review: 'bg-orange-500',
+  approved: 'bg-green-500',
+  scheduled: 'bg-purple-500',
+  posted: 'bg-emerald-500',
+};
+
 export default function ContentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const [subTab, setSubTab] = useState<SubTab>('calendar');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [brandId, setBrandId] = useState<string | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [shoots, setShoots] = useState<ShootBrief[]>([]);
@@ -53,6 +65,19 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
 
   useEffect(() => { loadBrand().then(bid => { if (bid) loadData(bid); }); }, [loadBrand, loadData]);
   useEffect(() => { if (brandId) loadData(brandId); }, [selectedMonth, brandId, loadData]);
+
+  // Status counts for pipeline
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { idea: 0, planned: 0, in_progress: 0, review: 0, approved: 0, scheduled: 0, posted: 0 };
+    content.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+    return counts;
+  }, [content]);
+
+  // Filtered content based on status filter
+  const filteredContent = useMemo(() => {
+    if (statusFilter === 'all') return content;
+    return content.filter(c => c.status === statusFilter);
+  }, [content, statusFilter]);
 
   // Content form
   const [contentForm, setContentForm] = useState({ title: '', contents: '', content_type: 'static', status: 'planned', date: '', day_of_week: '', caption: '', hashtags: '', link: '', schedule_time: '', comments: '' });
@@ -115,16 +140,60 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                 <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded ${viewMode === 'grid' ? 'bg-white/10 text-white' : 'text-gray-400'}`}><Grid3x3 size={14} /></button>
                 <button onClick={() => setViewMode('list')} className={`p-1.5 rounded ${viewMode === 'list' ? 'bg-white/10 text-white' : 'text-gray-400'}`}><List size={14} /></button>
               </div>
-              <span className="text-xs sm:text-sm text-gray-400">{content.length} items</span>
+              <span className="text-xs sm:text-sm text-gray-400">{filteredContent.length} items</span>
             </div>
             <button onClick={() => { resetContentForm(); setEditContent(null); setShowContentModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition self-end sm:self-auto"><Plus size={14} /><span className="hidden sm:inline">Add Content</span><span className="sm:hidden">Add</span></button>
           </div>
 
-          {content.length === 0 ? (
-            <EmptyState icon={Image} title={selectedMonth === 'All' ? 'No content yet' : `No content for ${selectedMonth}`} description="Create content items or sync from Google Sheets" action={{ label: 'Add Content', onClick: () => { resetContentForm(); setShowContentModal(true); } }} />
+          {/* Pipeline Summary Strip */}
+          <div className="bg-white/5 rounded-xl border border-white/10 p-3 sm:p-4 overflow-x-auto">
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-max justify-center">
+              {CONTENT_STATUSES.map((s, i) => (
+                <div key={s.value} className="flex items-center gap-1.5 sm:gap-2">
+                  <button
+                    onClick={() => setStatusFilter(statusFilter === s.value ? 'all' : s.value as StatusFilter)}
+                    className={`flex items-center gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full transition text-[10px] sm:text-xs whitespace-nowrap ${statusFilter === s.value ? 'ring-2 ring-white/40 scale-105' : 'hover:bg-white/5'}`}
+                  >
+                    <span className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full ${STATUS_COLORS[s.value]} flex items-center justify-center text-white text-[8px] sm:text-[9px] font-bold`}>
+                      {statusCounts[s.value]}
+                    </span>
+                    <span className="text-gray-300 hidden sm:inline">{s.label}</span>
+                  </button>
+                  {i < CONTENT_STATUSES.length - 1 && (
+                    <ArrowRight size={10} className="text-gray-600 shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Status Filter Tabs */}
+          <div className="flex gap-1 sm:gap-1.5 overflow-x-auto scrollbar-hide pb-1 sm:pb-0">
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap flex items-center gap-1.5 ${statusFilter === 'all' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}
+            >
+              All <span className="bg-white/20 px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px]">{content.length}</span>
+            </button>
+            {CONTENT_STATUSES.map(s => (
+              <button
+                key={s.value}
+                onClick={() => setStatusFilter(s.value as StatusFilter)}
+                className={`px-2.5 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap flex items-center gap-1.5 ${statusFilter === s.value ? `${STATUS_COLORS[s.value]} text-white` : 'bg-white/5 text-gray-400 hover:text-white'}`}
+              >
+                {s.label}
+                {statusCounts[s.value] > 0 && (
+                  <span className={`px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] ${statusFilter === s.value ? 'bg-white/20' : 'bg-white/10'}`}>{statusCounts[s.value]}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {filteredContent.length === 0 ? (
+            <EmptyState icon={Image} title={statusFilter !== 'all' ? `No ${CONTENT_STATUSES.find(s => s.value === statusFilter)?.label || statusFilter} content` : selectedMonth === 'All' ? 'No content yet' : `No content for ${selectedMonth}`} description={statusFilter !== 'all' ? 'Try selecting a different status filter' : 'Create content items or sync from Google Sheets'} action={{ label: 'Add Content', onClick: () => { resetContentForm(); setShowContentModal(true); } }} />
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {content.map(c => (
+              {filteredContent.map(c => (
                 <div key={c.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:border-white/20 transition group">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
@@ -160,7 +229,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                     <th className="text-right py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">Actions</th>
                   </tr></thead>
                   <tbody>
-                    {content.map(c => (
+                    {filteredContent.map(c => (
                       <tr key={c.id} className="border-b border-white/5 hover:bg-white/5 transition">
                         <td className="py-3 px-3 sm:px-4 text-gray-300 text-xs">{c.date ? new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '-'}</td>
                         {selectedMonth === 'All' && <td className="py-3 px-3 sm:px-4 text-gray-400 text-xs">{c.month}</td>}
