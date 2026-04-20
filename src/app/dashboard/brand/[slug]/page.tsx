@@ -14,6 +14,10 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
   const supabase = createBrowserClient();
 
   const loadData = useCallback(async () => {
+    // Wait for auth session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { setLoading(false); return; }
+
     const { data: b } = await supabase.from('brands').select('*').eq('slug', slug).single();
     if (!b) { setLoading(false); return; }
     setBrand(b);
@@ -54,24 +58,26 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
 
   const modules = [
     { label: 'Tasks', icon: CheckSquare, value: `${stats.tasks.done}/${stats.tasks.total}`, sub: stats.tasks.overdue > 0 ? `${stats.tasks.overdue} overdue` : 'On track', color: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400', subColor: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400' },
-    { label: 'Content', icon: Target, value: stats.content.total, sub: `${stats.content.posted} posted`, color: 'text-blue-400', subColor: 'text-gray-400' },
-    { label: 'Meetings', icon: FileText, value: stats.meetings, sub: 'This month', color: stats.meetings >= 2 ? 'text-green-400' : 'text-yellow-400', subColor: 'text-gray-400' },
-    { label: 'Shoots', icon: Camera, value: stats.shoots, sub: 'Scheduled', color: 'text-orange-400', subColor: 'text-gray-400' },
-    { label: 'KOL Campaigns', icon: Users, value: stats.influencers, sub: 'Total', color: 'text-pink-400', subColor: 'text-gray-400' },
-    { label: 'Active Ads', icon: BarChart3, value: stats.ads, sub: 'Running', color: stats.ads > 0 ? 'text-green-400' : 'text-gray-400', subColor: 'text-gray-400' },
-    { label: 'Design Briefs', icon: Palette, value: stats.designs, sub: 'In pipeline', color: 'text-purple-400', subColor: 'text-gray-400' },
-    { label: 'Events', icon: Calendar, value: stats.events, sub: 'Scheduled', color: 'text-cyan-400', subColor: 'text-gray-400' },
+    { label: 'Content', icon: Target, value: stats.content.total, sub: `${stats.content.posted} posted`, color: stats.content.total > 0 ? 'text-blue-400' : 'text-gray-500', subColor: 'text-gray-400' },
+    { label: 'Meetings', icon: FileText, value: stats.meetings, sub: 'This month', color: stats.meetings >= 2 ? 'text-green-400' : stats.meetings >= 1 ? 'text-yellow-400' : 'text-gray-500', subColor: 'text-gray-400' },
+    { label: 'Shoots', icon: Camera, value: stats.shoots, sub: 'Briefs', color: stats.shoots > 0 ? 'text-orange-400' : 'text-gray-500', subColor: 'text-gray-400' },
+    { label: 'KOL Campaigns', icon: Users, value: stats.influencers, sub: 'Total', color: stats.influencers > 0 ? 'text-pink-400' : 'text-gray-500', subColor: 'text-gray-400' },
+    { label: 'Active Ads', icon: BarChart3, value: stats.ads, sub: 'Running', color: stats.ads > 0 ? 'text-green-400' : 'text-gray-500', subColor: 'text-gray-400' },
+    { label: 'Design Briefs', icon: Palette, value: stats.designs, sub: 'In pipeline', color: stats.designs > 0 ? 'text-purple-400' : 'text-gray-500', subColor: 'text-gray-400' },
+    { label: 'Calendar Events', icon: Calendar, value: stats.events, sub: 'Scheduled', color: stats.events > 0 ? 'text-cyan-400' : 'text-gray-500', subColor: 'text-gray-400' },
   ];
 
   const healthScore = Math.min(100, Math.round(
-    (stats.tasks.overdue === 0 ? 20 : Math.max(0, 20 - stats.tasks.overdue * 5)) +
-    (stats.meetings >= 2 ? 20 : stats.meetings * 10) +
-    (stats.content.posted > 0 ? 20 : 0) +
-    (stats.ads > 0 ? 20 : 10) +
-    (stats.influencers > 0 ? 20 : 10)
+    (stats.tasks.overdue === 0 ? 15 : Math.max(0, 15 - stats.tasks.overdue * 5)) +
+    (stats.meetings >= 2 ? 15 : stats.meetings * 7) +
+    (stats.content.total > 0 ? 15 + Math.min(10, stats.content.total) : 0) +
+    (stats.content.posted > 0 ? 15 : 0) +
+    (stats.shoots > 0 ? 10 : 0) +
+    (stats.ads > 0 ? 10 : 0) +
+    (stats.events > 0 ? 10 : 0)
   ));
 
-  const healthColor = healthScore >= 80 ? 'text-green-400' : healthScore >= 50 ? 'text-yellow-400' : 'text-red-400';
+  const healthColor = healthScore >= 70 ? 'text-green-400' : healthScore >= 40 ? 'text-yellow-400' : 'text-red-400';
 
   return (
     <div className="space-y-4 sm:space-y-6">
