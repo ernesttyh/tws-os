@@ -38,7 +38,8 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
   const [shoots, setShoots] = useState<ShootBrief[]>([]);
 
   const currentMonth = `${MONTH_NAMES[new Date().getMonth()]} ${new Date().getFullYear()}`;
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [selectedMonth, setSelectedMonth] = useState('All');
+  const [hasAutoSelected, setHasAutoSelected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showContentModal, setShowContentModal] = useState(false);
   const [showShootModal, setShowShootModal] = useState(false);
@@ -79,6 +80,16 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
       return parse(b) - parse(a);
     });
   }, [content]);
+
+  // Auto-select current month if it has content, otherwise stay on All
+  useEffect(() => {
+    if (!hasAutoSelected && availableMonths.length > 0) {
+      if (availableMonths.includes(currentMonth)) {
+        setSelectedMonth(currentMonth);
+      }
+      setHasAutoSelected(true);
+    }
+  }, [availableMonths, currentMonth, hasAutoSelected]);
 
   // Client-side month filter
   const monthFilteredContent = useMemo(() => {
