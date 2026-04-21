@@ -1,4 +1,4 @@
-export type BrandGroup = 'neo_group' | 'fleursophy' | 'penang_culture' | 'deprosperoo' | 'other'
+export type BrandGroup = 'neo_group' | 'fleursophy' | 'deprosperoo' | 'independent' | 'tsim' | 'other'
 export type BrandStatus = 'active' | 'paused' | 'archived'
 export type TeamRole = 'admin' | 'manager' | 'designer' | 'copywriter' | 'videographer' | 'intern' | 'custom'
 export type TaskStatus = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'archived'
@@ -163,8 +163,9 @@ export interface CadenceSettings {
 export const BRAND_GROUPS: Record<BrandGroup, string> = {
   neo_group: 'Neo Group',
   fleursophy: 'Fleursophy',
-  penang_culture: 'Penang Culture',
   deprosperoo: 'Deprosperoo',
+  independent: 'Independent',
+  tsim: 'Tsim',
   other: 'Other Clients',
 }
 

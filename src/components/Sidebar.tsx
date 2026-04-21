@@ -37,7 +37,7 @@ export default function Sidebar({ onNavigate, isOpen, onClose }: SidebarProps) {
     return acc
   }, {} as Record<BrandGroup, Brand[]>)
 
-  const groupOrder: BrandGroup[] = ['neo_group', 'penang_culture', 'fleursophy', 'deprosperoo', 'other']
+  const groupOrder: BrandGroup[] = ['neo_group', 'fleursophy', 'deprosperoo', 'independent', 'tsim', 'other']
 
   const toggleGroup = (g: string) => {
     setCollapsed(prev => ({ ...prev, [g]: !prev[g] }))
