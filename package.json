@@ -15,7 +15,15 @@
     "@supabase/supabase-js": "^2.49.4",
     "@supabase/ssr": "^0.6.1",
     "lucide-react": "^0.487.0",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "@tiptap/react": "^2.12.0",
+    "@tiptap/pm": "^2.12.0",
+    "@tiptap/starter-kit": "^2.12.0",
+    "@tiptap/extension-task-list": "^2.12.0",
+    "@tiptap/extension-task-item": "^2.12.0",
+    "@tiptap/extension-link": "^2.12.0",
+    "@tiptap/extension-placeholder": "^2.12.0",
+    "@tiptap/extension-underline": "^2.12.0"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

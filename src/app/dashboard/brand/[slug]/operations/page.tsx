@@ -1,54 +1,64 @@
 'use client';
-import { useState, useEffect, useCallback, useMemo, use } from 'react';
+import { useState, useEffect, useCallback, useRef, use } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
+import dynamic from 'next/dynamic';
 import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PriorityBadge from '@/components/ui/PriorityBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight, ArrowLeft, Save, Clock, Building2, Search, X } from 'lucide-react';
+
+// Lazy-load TipTap editor (big bundle, no SSR)
+const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), { ssr: false, loading: () => <div className="h-64 bg-white/5 rounded-lg animate-pulse" /> });
 
 type Tab = 'meetings' | 'tasks' | 'cadence';
+type MeetingView = 'brand' | 'group';
 
-interface Meeting { id: string; title: string; meeting_date: string; meeting_type: string; content: string | null; source: string; action_items_extracted: boolean; transcript_raw: string | null; creator?: { name: string } | null }
+interface Brand { id: string; name: string; slug: string; brand_group: string }
+interface Meeting { id: string; brand_id: string; title: string; meeting_date: string; meeting_type: string; content: string | null; source: string; action_items_extracted: boolean; transcript_raw: string | null; creator?: { id: string; name: string } | null; brand?: { name: string; slug: string } | null }
 interface Task { id: string; title: string; description: string | null; status: string; priority: string; due_date: string | null; assigned_member?: { name: string } | null; tags: string[] | null }
+
+const BRAND_GROUP_LABELS: Record<string, string> = {
+  neo_group: 'Neo Group', fleursophy: 'Fleursophy', deprosperoo: 'Deprosperoo', independent: 'Independent', tsim: 'TSIM', other: 'Other'
+};
 
 export default function OperationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const [tab, setTab] = useState<Tab>('meetings');
-  const [brandId, setBrandId] = useState<string | null>(null);
+  const [brand, setBrand] = useState<Brand | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [groupMeetings, setGroupMeetings] = useState<Meeting[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showMeetingModal, setShowMeetingModal] = useState(false);
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [editMeeting, setEditMeeting] = useState<Meeting | null>(null);
-  const [editTask, setEditTask] = useState<Task | null>(null);
-  const [expandedMeeting, setExpandedMeeting] = useState<string | null>(null);
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
-
-  // Task view state
-  const [taskView, setTaskView] = useState<'table' | 'board'>('table');
+  const [meetingView, setMeetingView] = useState<MeetingView>('brand');
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [isNewMeeting, setIsNewMeeting] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedTask, setExpandedTask] = useState<string | null>(null);
-
-  // Drag and drop state
-  const [draggedTask, setDraggedTask] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [editTask, setEditTask] = useState<Task | null>(null);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supabase = createBrowserClient();
 
+  // New meeting form
+  const [newTitle, setNewTitle] = useState('');
+  const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newType, setNewType] = useState('workplan');
+  const [newSource, setNewSource] = useState('manual');
+
   const loadBrand = useCallback(async () => {
-    const { data } = await supabase.from('brands').select('id').eq('slug', slug).single();
-    if (data) { setBrandId(data.id); return data.id; }
+    const { data } = await supabase.from('brands').select('id, name, slug, brand_group').eq('slug', slug).single();
+    if (data) { setBrand(data); return data; }
     return null;
   }, [slug, supabase]);
 
-  const loadData = useCallback(async (bid: string) => {
+  const loadData = useCallback(async (b: Brand) => {
     setLoading(true);
     const [meetingsRes, tasksRes, teamRes] = await Promise.all([
-      fetch(`/api/brands/${bid}/meetings`),
-      fetch(`/api/brands/${bid}/tasks`),
+      fetch(`/api/brands/${b.id}/meetings`),
+      fetch(`/api/brands/${b.id}/tasks`),
       fetch('/api/team'),
     ]);
     if (meetingsRes.ok) setMeetings(await meetingsRes.json());
@@ -57,111 +67,108 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     setLoading(false);
   }, []);
 
+  const loadGroupMeetings = useCallback(async (b: Brand) => {
+    const res = await fetch(`/api/group-meetings?group=${b.brand_group}`);
+    if (res.ok) setGroupMeetings(await res.json());
+  }, []);
+
   useEffect(() => {
-    loadBrand().then(bid => { if (bid) loadData(bid); });
-  }, [loadBrand, loadData]);
+    loadBrand().then(b => { if (b) { loadData(b); loadGroupMeetings(b); } });
+  }, [loadBrand, loadData, loadGroupMeetings]);
 
-  const tabs: { key: Tab; label: string; shortLabel: string; icon: React.ElementType; count: number }[] = [
-    { key: 'meetings', label: 'Meeting Minutes', shortLabel: 'Meetings', icon: FileText, count: meetings.length },
-    { key: 'tasks', label: 'Task Board', shortLabel: 'Tasks', icon: CheckSquare, count: tasks.filter(t => t.status !== 'done' && t.status !== 'archived').length },
-    { key: 'cadence', label: 'Cadence Tracker', shortLabel: 'Cadence', icon: BarChart3, count: 0 },
-  ];
+  // Auto-save meeting content
+  const autoSave = useCallback(async (meetingId: string, html: string) => {
+    if (!brand) return;
+    setSaveStatus('saving');
+    await fetch(`/api/brands/${brand.id}/meetings/${meetingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: html }),
+    });
+    setSaveStatus('saved');
+    setTimeout(() => setSaveStatus('idle'), 2000);
+  }, [brand]);
 
-  // Meeting form state
-  const [meetingForm, setMeetingForm] = useState({ title: '', meeting_date: '', meeting_type: 'workplan', content: '', source: 'manual', transcript_raw: '' });
-  const resetMeetingForm = () => setMeetingForm({ title: '', meeting_date: new Date().toISOString().split('T')[0], meeting_type: 'workplan', content: '', source: 'manual', transcript_raw: '' });
+  const handleContentChange = useCallback((meetingId: string, html: string) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus('saving');
+    saveTimerRef.current = setTimeout(() => autoSave(meetingId, html), 1200);
+  }, [autoSave]);
 
-  const saveMeeting = async () => {
-    if (!brandId) return;
-    const payload = { ...meetingForm, transcript_raw: meetingForm.transcript_raw || null };
-    if (editMeeting) {
-      await fetch(`/api/brands/${brandId}/meetings/${editMeeting.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    } else {
-      await fetch(`/api/brands/${brandId}/meetings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  // Create new meeting
+  const createMeeting = async () => {
+    if (!brand || !newTitle.trim()) return;
+    const res = await fetch(`/api/brands/${brand.id}/meetings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: newTitle, meeting_date: newDate, meeting_type: newType, source: newSource, content: '<p></p>' }),
+    });
+    if (res.ok) {
+      const meeting = await res.json();
+      setMeetings(prev => [meeting, ...prev]);
+      setSelectedMeeting(meeting);
+      setIsNewMeeting(false);
     }
-    setShowMeetingModal(false); setEditMeeting(null); resetMeetingForm();
-    loadData(brandId);
+  };
+
+  // Update meeting metadata
+  const updateMeetingMeta = async (meetingId: string, updates: Partial<Meeting>) => {
+    if (!brand) return;
+    await fetch(`/api/brands/${brand.id}/meetings/${meetingId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    setMeetings(prev => prev.map(m => m.id === meetingId ? { ...m, ...updates } : m));
+    if (selectedMeeting?.id === meetingId) setSelectedMeeting(prev => prev ? { ...prev, ...updates } : prev);
   };
 
   const deleteMeeting = async (id: string) => {
-    if (!brandId || !confirm('Delete this meeting?')) return;
-    await fetch(`/api/brands/${brandId}/meetings/${id}`, { method: 'DELETE' });
-    loadData(brandId);
+    if (!brand || !confirm('Delete this meeting note?')) return;
+    await fetch(`/api/brands/${brand.id}/meetings/${id}`, { method: 'DELETE' });
+    setMeetings(prev => prev.filter(m => m.id !== id));
+    if (selectedMeeting?.id === id) { setSelectedMeeting(null); setIsNewMeeting(false); }
+    loadGroupMeetings(brand);
   };
 
-  // Task form state
+  // Task CRUD
   const [taskForm, setTaskForm] = useState({ title: '', description: '', status: 'todo', priority: 'medium', due_date: '', assigned_to: '' });
   const resetTaskForm = () => setTaskForm({ title: '', description: '', status: 'todo', priority: 'medium', due_date: '', assigned_to: '' });
 
   const saveTask = async () => {
-    if (!brandId) return;
+    if (!brand) return;
     const payload = { ...taskForm, assigned_to: taskForm.assigned_to || null, due_date: taskForm.due_date || null, description: taskForm.description || null };
     if (editTask) {
-      await fetch(`/api/brands/${brandId}/tasks/${editTask.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      await fetch(`/api/brands/${brand.id}/tasks/${editTask.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     } else {
-      await fetch(`/api/brands/${brandId}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      await fetch(`/api/brands/${brand.id}/tasks`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     }
     setShowTaskModal(false); setEditTask(null); resetTaskForm();
-    loadData(brandId);
-  };
-
-  const updateTaskStatus = async (taskId: string, status: string) => {
-    if (!brandId) return;
-    await fetch(`/api/brands/${brandId}/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, ...(status === 'done' ? { completed_at: new Date().toISOString() } : { completed_at: null }) }) });
-    loadData(brandId);
+    loadData(brand);
   };
 
   const deleteTask = async (id: string) => {
-    if (!brandId || !confirm('Delete this task?')) return;
-    await fetch(`/api/brands/${brandId}/tasks/${id}`, { method: 'DELETE' });
-    loadData(brandId);
+    if (!brand || !confirm('Delete this task?')) return;
+    await fetch(`/api/brands/${brand.id}/tasks/${id}`, { method: 'DELETE' });
+    loadData(brand);
   };
-
-  const openEditTask = (task: Task) => {
-    setEditTask(task);
-    setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' });
-    setShowTaskModal(true);
-  };
-
-  // Drag and drop handler
-  const handleDrop = async (newStatus: string) => {
-    if (!draggedTask || !brandId) return;
-    const task = tasks.find(t => t.id === draggedTask);
-    if (!task || task.status === newStatus) {
-      setDraggedTask(null);
-      setDropTarget(null);
-      return;
-    }
-
-    // Optimistic update
-    setTasks(prev => prev.map(t => t.id === draggedTask ? { ...t, status: newStatus } : t));
-    setDraggedTask(null);
-    setDropTarget(null);
-
-    try {
-      const res = await fetch(`/api/brands/${brandId}/tasks/${draggedTask}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, ...(newStatus === 'done' ? { completed_at: new Date().toISOString() } : { completed_at: null }) }),
-      });
-      if (!res.ok) {
-        // Revert on error
-        loadData(brandId);
-      }
-    } catch {
-      loadData(brandId);
-    }
-  };
-
-  // Filtered tasks for search
-  const filteredTasks = useMemo(() => {
-    if (!searchQuery) return tasks;
-    return tasks.filter(t => t.title.toLowerCase().includes(searchQuery.toLowerCase()) || (t.description && t.description.toLowerCase().includes(searchQuery.toLowerCase())));
-  }, [tasks, searchQuery]);
 
   const taskStatuses = ['backlog', 'todo', 'in_progress', 'review', 'done'];
-  const statusLabels: Record<string, string> = { backlog: 'BACKLOG', todo: 'TODO', in_progress: 'IN PROGRESS', review: 'REVIEW', done: 'DONE' };
-  const tasksByStatus = taskStatuses.reduce((acc, s) => { acc[s] = filteredTasks.filter(t => t.status === s); return acc; }, {} as Record<string, Task[]>);
+  const tasksByStatus = taskStatuses.reduce((acc, s) => { acc[s] = tasks.filter(t => t.status === s); return acc; }, {} as Record<string, Task[]>);
+
+  // Filter meetings
+  const displayMeetings = meetingView === 'group' ? groupMeetings : meetings;
+  const filteredMeetings = searchQuery
+    ? displayMeetings.filter(m => m.title.toLowerCase().includes(searchQuery.toLowerCase()) || m.content?.toLowerCase().includes(searchQuery.toLowerCase()) || m.brand?.name?.toLowerCase().includes(searchQuery.toLowerCase()))
+    : displayMeetings;
+
+  const groupLabel = brand ? BRAND_GROUP_LABELS[brand.brand_group] || brand.brand_group : '';
+
+  const tabs: { key: Tab; label: string; shortLabel: string; icon: React.ElementType; count: number }[] = [
+    { key: 'meetings', label: 'Meeting Notes', shortLabel: 'Notes', icon: FileText, count: meetings.length },
+    { key: 'tasks', label: 'Task Board', shortLabel: 'Tasks', icon: CheckSquare, count: tasks.filter(t => t.status !== 'done' && t.status !== 'archived').length },
+    { key: 'cadence', label: 'Cadence Tracker', shortLabel: 'Cadence', icon: BarChart3, count: 0 },
+  ];
 
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-white/5 rounded w-48" /><div className="h-64 bg-white/5 rounded" /></div></div>;
 
@@ -170,7 +177,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       {/* Sub-tabs */}
       <div className="flex gap-1 bg-white/5 rounded-lg p-1 overflow-x-auto scrollbar-hide">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${tab === t.key ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'meetings') { setSelectedMeeting(null); setIsNewMeeting(false); } }} className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${tab === t.key ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
             <t.icon size={14} className="shrink-0" />
             <span className="sm:hidden">{t.shortLabel}</span>
             <span className="hidden sm:inline">{t.label}</span>
@@ -179,218 +186,199 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         ))}
       </div>
 
-      {/* MEETINGS TAB */}
-      {tab === 'meetings' && (
-        <div className="space-y-3 sm:space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base sm:text-lg font-semibold text-white">Meeting Minutes</h2>
-            <button onClick={() => { resetMeetingForm(); setEditMeeting(null); setShowMeetingModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
-              <Plus size={14} /><span className="hidden sm:inline">New Meeting</span><span className="sm:hidden">New</span>
-            </button>
+      {/* ===== MEETINGS TAB ===== */}
+      {tab === 'meetings' && !selectedMeeting && !isNewMeeting && (
+        <div className="space-y-3 sm:space-y-4 animate-fade-in">
+          {/* Header with view toggle */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-base sm:text-lg font-semibold text-white">Meeting Notes</h2>
+              {/* Brand / Group toggle */}
+              <div className="flex bg-white/5 rounded-lg p-0.5 text-xs">
+                <button onClick={() => setMeetingView('brand')} className={`px-2.5 py-1 rounded-md transition ${meetingView === 'brand' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                  Brand
+                </button>
+                <button onClick={() => { setMeetingView('group'); if (brand) loadGroupMeetings(brand); }} className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${meetingView === 'group' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                  <Building2 size={11} />{groupLabel}
+                </button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Search */}
+              <div className="relative flex-1 sm:flex-initial">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input type="text" placeholder="Search notes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-8 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg w-full sm:w-48 focus:w-64 transition-all" />
+                {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"><X size={12} /></button>}
+              </div>
+              <button onClick={() => { setIsNewMeeting(true); setNewTitle(''); setNewDate(new Date().toISOString().split('T')[0]); setNewType('workplan'); setNewSource('manual'); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
+                <Plus size={14} /><span className="hidden sm:inline">New Note</span><span className="sm:hidden">New</span>
+              </button>
+            </div>
           </div>
-          {meetings.length === 0 ? (
-            <EmptyState icon={FileText} title="No meetings yet" description="Record your first workplan meeting or upload a Plaud transcript" action={{ label: 'Add Meeting', onClick: () => { resetMeetingForm(); setShowMeetingModal(true); } }} />
+
+          {/* Meeting List */}
+          {filteredMeetings.length === 0 ? (
+            <EmptyState icon={FileText} title={searchQuery ? 'No matching notes' : 'No meeting notes yet'} description={searchQuery ? 'Try a different search term' : 'Create your first meeting note — it works like a mini Google Doc!'} action={searchQuery ? undefined : { label: 'Create Note', onClick: () => setIsNewMeeting(true) }} />
           ) : (
             <div className="space-y-2">
-              {meetings.map(m => (
-                <div key={m.id} className="bg-white/5 rounded-lg border border-white/10">
-                  <div className="flex items-center gap-2 sm:gap-3 p-3 sm:p-4 cursor-pointer" onClick={() => setExpandedMeeting(expandedMeeting === m.id ? null : m.id)}>
-                    {expandedMeeting === m.id ? <ChevronDown size={16} className="text-gray-400 shrink-0" /> : <ChevronRight size={16} className="text-gray-400 shrink-0" />}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                        <span className="text-white font-medium text-sm truncate">{m.title}</span>
-                        <StatusBadge status={m.meeting_type} />
-                        <span className="text-[10px] sm:text-xs text-gray-500">{m.source}</span>
+              {filteredMeetings.map(m => {
+                const plainText = m.content?.replace(/<[^>]*>/g, '').trim() || '';
+                const preview = plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '');
+                return (
+                  <div key={m.id} onClick={() => setSelectedMeeting(m)} className="bg-white/5 rounded-lg border border-white/10 hover:border-purple-500/40 p-3 sm:p-4 cursor-pointer transition group">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          {meetingView === 'group' && m.brand?.name && (
+                            <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-300">{m.brand.name}</span>
+                          )}
+                          <span className="text-sm text-white font-medium truncate">{m.title}</span>
+                          <StatusBadge status={m.meeting_type} />
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500">
+                          <span>{new Date(m.meeting_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          {m.creator?.name && <span>• {m.creator.name}</span>}
+                          <span className="badge-neutral badge text-[9px]">{m.source}</span>
+                        </div>
+                        {preview && <p className="text-xs text-gray-400 mt-1.5 line-clamp-2">{preview}</p>}
                       </div>
-                      <span className="text-[10px] sm:text-xs text-gray-400">{new Date(m.meeting_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                    </div>
-                    <div className="flex gap-1 shrink-0">
-                      <button onClick={(e) => { e.stopPropagation(); setEditMeeting(m); setMeetingForm({ title: m.title, meeting_date: m.meeting_date, meeting_type: m.meeting_type, content: m.content || '', source: m.source, transcript_raw: m.transcript_raw || '' }); setShowMeetingModal(true); }} className="p-1.5 rounded hover:bg-white/10 text-gray-400"><Edit2 size={14} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteMeeting(m.id); }} className="p-1.5 rounded hover:bg-white/10 text-gray-400 hover:text-red-400"><Trash2 size={14} /></button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteMeeting(m.id); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-white/10 text-gray-500 hover:text-red-400 transition shrink-0">
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </div>
-                  {expandedMeeting === m.id && (
-                    <div className="px-3 sm:px-4 pb-3 sm:pb-4 border-t border-white/5 pt-3">
-                      {m.content ? (
-                        <div className="text-xs sm:text-sm text-gray-300 whitespace-pre-wrap">{m.content}</div>
-                      ) : (
-                        <p className="text-xs sm:text-sm text-gray-500 italic">No notes yet. Click edit to add meeting minutes.</p>
-                      )}
-                      {m.transcript_raw && (
-                        <details className="mt-3">
-                          <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-300">View raw transcript</summary>
-                          <pre className="mt-2 text-xs text-gray-500 whitespace-pre-wrap bg-black/20 rounded p-3 max-h-48 overflow-y-auto">{m.transcript_raw}</pre>
-                        </details>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       )}
 
-      {/* TASKS TAB */}
-      {tab === 'tasks' && (
-        <div className="space-y-3 sm:space-y-4">
-          {/* Header with view toggle */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <h2 className="text-base sm:text-lg font-semibold text-white">Tasks</h2>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setTaskView('table')} className={`px-3 py-1.5 text-xs rounded-lg transition ${taskView === 'table' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}>
-                  📋 Table
-                </button>
-                <button onClick={() => setTaskView('board')} className={`px-3 py-1.5 text-xs rounded-lg transition ${taskView === 'board' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400 hover:text-white'}`}>
-                  📊 Board
-                </button>
+      {/* ===== NEW MEETING FORM ===== */}
+      {tab === 'meetings' && isNewMeeting && !selectedMeeting && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setIsNewMeeting(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition">
+              <ArrowLeft size={18} />
+            </button>
+            <h2 className="text-base sm:text-lg font-semibold text-white">New Meeting Note</h2>
+          </div>
+          <div className="bg-white/5 rounded-xl border border-white/10 p-4 sm:p-6 space-y-4">
+            <FormField label="Title" name="title" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. April Workplan Meeting — Korea Culture" required autoFocus />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <FormField label="Date" name="meeting_date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
+              <FormField label="Type" name="meeting_type" value={newType} onChange={e => setNewType(e.target.value)} options={[{ value: 'workplan', label: '📋 Workplan' }, { value: 'review', label: '🔍 Review' }, { value: 'brainstorm', label: '💡 Brainstorm' }, { value: 'adhoc', label: '⚡ Ad-hoc' }]} />
+              <FormField label="Source" name="source" value={newSource} onChange={e => setNewSource(e.target.value)} options={[{ value: 'manual', label: '✍️ Manual' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }]} />
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button onClick={() => setIsNewMeeting(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition">Cancel</button>
+              <button onClick={createMeeting} disabled={!newTitle.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
+                <FileText size={14} /> Create & Start Writing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MEETING EDITOR (inline doc view) ===== */}
+      {tab === 'meetings' && selectedMeeting && (
+        <div className="space-y-3 animate-fade-in">
+          {/* Editor header */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={() => { setSelectedMeeting(null); if (brand) { loadData(brand); loadGroupMeetings(brand); } }} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition shrink-0">
+                <ArrowLeft size={18} />
+              </button>
+              <div className="min-w-0">
+                <input type="text" value={selectedMeeting.title} onChange={e => { const val = e.target.value; setSelectedMeeting(prev => prev ? { ...prev, title: val } : prev); }}
+                  onBlur={() => updateMeetingMeta(selectedMeeting.id, { title: selectedMeeting.title })}
+                  className="text-base sm:text-lg font-semibold text-white bg-transparent border-none outline-none w-full truncate p-0 focus:ring-0"
+                  style={{ boxShadow: 'none', minHeight: 'auto' }} />
+                <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 mt-0.5">
+                  <span>{new Date(selectedMeeting.meeting_date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                  <StatusBadge status={selectedMeeting.meeting_type} />
+                  {selectedMeeting.creator?.name && <span>• {selectedMeeting.creator.name}</span>}
+                </div>
               </div>
             </div>
-            <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0 self-end sm:self-auto">
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Save indicator */}
+              {saveStatus === 'saving' && <span className="text-xs text-yellow-400 flex items-center gap-1"><Clock size={12} className="animate-spin" /> Saving...</span>}
+              {saveStatus === 'saved' && <span className="text-xs text-green-400 flex items-center gap-1"><Save size={12} /> Saved</span>}
+              {/* Metadata edit */}
+              <select value={selectedMeeting.meeting_type} onChange={e => { const val = e.target.value; setSelectedMeeting(prev => prev ? { ...prev, meeting_type: val } : prev); updateMeetingMeta(selectedMeeting.id, { meeting_type: val }); }}
+                className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1">
+                <option value="workplan">📋 Workplan</option>
+                <option value="review">🔍 Review</option>
+                <option value="brainstorm">💡 Brainstorm</option>
+                <option value="adhoc">⚡ Ad-hoc</option>
+              </select>
+              <button onClick={() => deleteMeeting(selectedMeeting.id)} className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition">
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </div>
+
+          {/* Rich Text Editor */}
+          <RichTextEditor
+            content={selectedMeeting.content || ''}
+            onChange={(html) => handleContentChange(selectedMeeting.id, html)}
+            placeholder="Start writing your meeting notes here...&#10;&#10;💡 Tips:&#10;• Use headings for sections (Agenda, Decisions, Action Items)&#10;• Use checklists to track action items&#10;• Your notes auto-save as you type"
+            autoFocus
+          />
+
+          {/* Transcript section (if available) */}
+          {selectedMeeting.transcript_raw && (
+            <details className="bg-white/5 rounded-lg border border-white/10 p-3 sm:p-4">
+              <summary className="text-xs sm:text-sm text-gray-400 cursor-pointer hover:text-gray-300 font-medium">📝 Raw Transcript</summary>
+              <pre className="mt-3 text-xs text-gray-500 whitespace-pre-wrap bg-black/20 rounded p-3 max-h-48 overflow-y-auto">{selectedMeeting.transcript_raw}</pre>
+            </details>
+          )}
+        </div>
+      )}
+
+      {/* ===== TASKS TAB - Kanban Board ===== */}
+      {tab === 'tasks' && (
+        <div className="space-y-3 sm:space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base sm:text-lg font-semibold text-white">Task Board</h2>
+            <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
               <Plus size={14} /><span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
             </button>
           </div>
-
-          {/* Search bar */}
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search tasks..."
-              className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-white text-sm placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition"
-            />
-          </div>
-
-          {/* Table View */}
-          {taskView === 'table' ? (
-            filteredTasks.length === 0 ? (
-              <EmptyState icon={CheckSquare} title={searchQuery ? 'No tasks found' : 'No tasks yet'} description={searchQuery ? 'Try a different search term' : 'Create your first task to get started'} action={{ label: 'Add Task', onClick: () => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); } }} />
-            ) : (
-              <div className="bg-white/5 rounded-lg border border-white/10 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-white/10 text-left text-gray-400 text-xs">
-                        <th className="py-3 px-3 font-medium">Task</th>
-                        <th className="py-3 px-3 font-medium w-28">Status</th>
-                        <th className="py-3 px-3 font-medium w-24">Priority</th>
-                        <th className="py-3 px-3 font-medium w-32 hidden sm:table-cell">Assignee</th>
-                        <th className="py-3 px-3 font-medium w-28 hidden sm:table-cell">Due Date</th>
-                        <th className="py-3 px-3 font-medium w-20">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTasks.map(task => (
-                        <tr key={task.id}
-                            onClick={() => { setExpandedTask(expandedTask === task.id ? null : task.id); }}
-                            className="border-b border-white/5 hover:bg-white/5 cursor-pointer transition">
-                          <td className="py-3 px-3">
-                            <div className="font-medium text-white truncate max-w-xs">{task.title}</div>
-                            {expandedTask === task.id && (
-                              <div className="mt-2 space-y-2">
-                                {task.description && (
-                                  <div className="text-xs text-gray-400 whitespace-pre-wrap">{task.description}</div>
-                                )}
-                                {/* Mobile-only info shown when expanded */}
-                                <div className="flex gap-2 flex-wrap sm:hidden text-xs">
-                                  {task.assigned_member && <span className="text-gray-400">👤 {task.assigned_member.name}</span>}
-                                  {task.due_date && <span className="text-gray-400">📅 {new Date(task.due_date).toLocaleDateString()}</span>}
-                                </div>
-                                {task.tags && task.tags.length > 0 && (
-                                  <div className="flex gap-1 flex-wrap">
-                                    {task.tags.map(tag => (
-                                      <span key={tag} className="px-1.5 py-0.5 bg-white/5 rounded text-[10px] text-gray-400">{tag}</span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-3"><StatusBadge status={task.status} /></td>
-                          <td className="py-3 px-3"><PriorityBadge priority={task.priority || 'medium'} /></td>
-                          <td className="py-3 px-3 text-gray-300 text-xs hidden sm:table-cell">{task.assigned_member?.name || '—'}</td>
-                          <td className="py-3 px-3 text-gray-300 text-xs hidden sm:table-cell">{task.due_date ? new Date(task.due_date).toLocaleDateString() : '—'}</td>
-                          <td className="py-3 px-3">
-                            <button onClick={(e) => { e.stopPropagation(); openEditTask(task); }} className="text-gray-400 hover:text-white transition"><Edit2 size={14} /></button>
-                            <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="text-gray-400 hover:text-red-400 transition ml-1"><Trash2 size={14} /></button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
+            {taskStatuses.map(status => (
+              <div key={status} className="bg-white/5 rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{status.replace('_', ' ')}</span>
+                  <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
+                </div>
+                <div className="space-y-2">
+                  {(tasksByStatus[status] || []).map(task => (
+                    <div key={task.id} className="bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-pointer group"
+                         onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                      <div className="flex items-start justify-between">
+                        <span className="text-xs sm:text-sm text-white font-medium leading-tight">{task.title}</span>
+                        <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
+                      </div>
+                      {task.description && <p className="text-[10px] sm:text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>}
+                      <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
+                        <PriorityBadge priority={task.priority} />
+                        {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-400">→ {task.assigned_member.name}</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )
-          ) : (
-            /* Board View (Kanban) */
-            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
-              {taskStatuses.map(status => (
-                <div
-                  key={status}
-                  onDragOver={(e) => { e.preventDefault(); setDropTarget(status); }}
-                  onDragLeave={() => setDropTarget(null)}
-                  onDrop={() => handleDrop(status)}
-                  className={`rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink transition-colors border-2 ${dropTarget === status ? 'border-purple-500 bg-purple-500/5' : 'border-transparent bg-white/5'}`}
-                >
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{statusLabels[status] || status.replace('_', ' ')}</span>
-                    <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {(tasksByStatus[status] || []).map(task => (
-                      <div
-                        key={task.id}
-                        draggable
-                        onDragStart={() => setDraggedTask(task.id)}
-                        onDragEnd={() => { setDraggedTask(null); setDropTarget(null); }}
-                        className={`bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-grab active:cursor-grabbing group ${draggedTask === task.id ? 'opacity-50' : ''}`}
-                        onClick={() => openEditTask(task)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <span className="text-xs sm:text-sm text-white font-medium leading-tight">{task.title}</span>
-                          <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
-                        </div>
-                        {task.description && <p className="text-[10px] sm:text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>}
-                        <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
-                          <PriorityBadge priority={task.priority} />
-                          {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                          {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-400">→ {task.assigned_member.name}</span>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
 
       {/* CADENCE TAB */}
-      {tab === 'cadence' && <CadenceTracker brandId={brandId} meetings={meetings} tasks={tasks} />}
-
-      {/* Meeting Modal */}
-      <Modal open={showMeetingModal} onClose={() => { setShowMeetingModal(false); setEditMeeting(null); }} title={editMeeting ? 'Edit Meeting' : 'New Meeting'} size="lg">
-        <div className="space-y-4">
-          <FormField label="Title" name="title" value={meetingForm.title} onChange={e => setMeetingForm(f => ({ ...f, title: e.target.value }))} placeholder="e.g. April Workplan Meeting" required />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <FormField label="Date" name="meeting_date" type="date" value={meetingForm.meeting_date} onChange={e => setMeetingForm(f => ({ ...f, meeting_date: e.target.value }))} required />
-            <FormField label="Type" name="meeting_type" value={meetingForm.meeting_type} onChange={e => setMeetingForm(f => ({ ...f, meeting_type: e.target.value }))} options={[{ value: 'workplan', label: 'Workplan' }, { value: 'review', label: 'Review' }, { value: 'brainstorm', label: 'Brainstorm' }, { value: 'adhoc', label: 'Ad-hoc' }]} />
-            <FormField label="Source" name="source" value={meetingForm.source} onChange={e => setMeetingForm(f => ({ ...f, source: e.target.value }))} options={[{ value: 'manual', label: 'Manual' }, { value: 'plaud', label: 'Plaud Transcript' }, { value: 'whatsapp', label: 'WhatsApp Export' }]} />
-          </div>
-          <FormField label="Meeting Notes" name="content" type="textarea" value={meetingForm.content} onChange={e => setMeetingForm(f => ({ ...f, content: e.target.value }))} placeholder="Key discussions, decisions, and action items..." rows={6} />
-          <FormField label="Raw Transcript (optional)" name="transcript_raw" type="textarea" value={meetingForm.transcript_raw} onChange={e => setMeetingForm(f => ({ ...f, transcript_raw: e.target.value }))} placeholder="Paste Plaud transcript or WhatsApp export here..." rows={3} />
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => { setShowMeetingModal(false); setEditMeeting(null); }} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
-            <button onClick={saveMeeting} disabled={!meetingForm.title || !meetingForm.meeting_date} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition">
-              {editMeeting ? 'Update' : 'Create'} Meeting
-            </button>
-          </div>
-        </div>
-      </Modal>
+      {tab === 'cadence' && <CadenceTracker brandId={brand?.id || null} meetings={meetings} tasks={tasks} />}
 
       {/* Task Modal */}
       <Modal open={showTaskModal} onClose={() => { setShowTaskModal(false); setEditTask(null); }} title={editTask ? 'Edit Task' : 'New Task'} size="lg">
