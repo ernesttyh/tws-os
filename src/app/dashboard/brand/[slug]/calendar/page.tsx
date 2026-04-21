@@ -6,7 +6,7 @@ import FormField from '@/components/ui/FormField';
 import EmptyState from '@/components/ui/EmptyState';
 import { Calendar, Plus, ChevronLeft, ChevronRight, Trash2, Edit2 } from 'lucide-react';
 
-interface CalendarEvent { id: string; title: string; event_type: string; start_date: string; end_date: string | null; start_time: string | null; all_day: boolean; color: string | null; description: string | null; location: string | null }
+interface CalendarEvent { id: string; title: string; event_type: string; start_date: string; end_date: string | null; start_time: string | null; all_day: boolean; color: string | null; description: string | null; location: string | null; brand_name?: string | null; brand_slug?: string | null }
 type ViewMode = 'month' | 'year';
 
 const EVENT_TYPES = [{ value: 'meeting', label: '📋 Meeting' }, { value: 'shoot', label: '📸 Shoot' }, { value: 'post', label: '📱 Post' }, { value: 'kol_visit', label: '🌟 KOL Visit' }, { value: 'campaign', label: '🚀 Campaign' }, { value: 'key_date', label: '📅 Key Date' }, { value: 'deadline', label: '⏰ Deadline' }];

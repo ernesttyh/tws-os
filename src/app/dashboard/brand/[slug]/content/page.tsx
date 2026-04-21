@@ -77,7 +77,11 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
   const [brandId, setBrandId] = useState<string | null>(null);
   const [content, setContent] = useState<ContentItem[]>([]);
   const [shoots, setShoots] = useState<ShootBrief[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState('All');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const d = new Date();
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    return months[d.getMonth()] + ' ' + d.getFullYear();
+  });
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [showContentModal, setShowContentModal] = useState(false);
@@ -97,7 +101,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
 
   const loadData = useCallback(async (bid: string) => {
     setLoading(true);
-    const monthParam = selectedMonth !== 'All' ? `?month=${selectedMonth}` : '';
+    const monthParam = ''; // Load all, filter client-side
     const [contentRes, shootsRes] = await Promise.all([
       fetch(`/api/brands/${bid}/content${monthParam}`),
       fetch(`/api/brands/${bid}/shoots`),
@@ -105,10 +109,10 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
     if (contentRes.ok) setContent(await contentRes.json());
     if (shootsRes.ok) setShoots(await shootsRes.json());
     setLoading(false);
-  }, [selectedMonth]);
+  }, []);
 
   useEffect(() => { loadBrand().then(bid => { if (bid) loadData(bid); }); }, [loadBrand, loadData]);
-  useEffect(() => { if (brandId) loadData(brandId); }, [selectedMonth, brandId, loadData]);
+  useEffect(() => { if (brandId) loadData(brandId); }, [brandId, loadData]);
 
   // Content form
   const [contentForm, setContentForm] = useState({ title: '', contents: '', content_type: 'static', status: 'planned', date: '', day_of_week: '', caption: '', hashtags: '', link: '', schedule_time: '', comments: '' });
@@ -153,9 +157,10 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
   // Filtered + sorted content
   const filteredContent = content
     .map(c => ({ ...c, smartStatus: getSmartStatus(c.status, c.date) }))
+    .filter(c => selectedMonth === 'All' || c.month === selectedMonth)
     .filter(c => statusFilter === 'all' || c.smartStatus === statusFilter)
     .sort((a, b) => {
-      if (a.date && b.date) return a.date.localeCompare(b.date);
+      if (a.date && b.date) return b.date.localeCompare(a.date);
       if (a.date) return -1;
       if (b.date) return 1;
       return 0;
@@ -209,7 +214,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
             <div className="flex items-center gap-2 sm:gap-3">
               <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-white border border-gray-200 rounded-lg px-2 sm:px-3 py-2 text-gray-900 text-xs sm:text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400">
                 <option value="All">All Months</option>
-                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                {(() => { const ms = [...new Set(content.map(c => c.month).filter(Boolean))]; ms.sort((a, b) => { const p = (s: string) => { const [m, y] = s.split(' '); return new Date(parseInt(y), ['January','February','March','April','May','June','July','August','September','October','November','December'].indexOf(m)); }; return p(b).getTime() - p(a).getTime(); }); return ms; })().map(m => <option key={m} value={m}>{m}</option>)}
               </select>
               <span className="text-xs sm:text-sm text-gray-500">{filteredContent.length} items</span>
             </div>

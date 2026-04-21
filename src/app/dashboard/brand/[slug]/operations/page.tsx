@@ -345,9 +345,9 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       const pa = PRIORITY_ORDER[a.priority] ?? 9;
       const pb = PRIORITY_ORDER[b.priority] ?? 9;
       if (pa !== pb) return pa - pb;
-      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
-      if (a.due_date) return -1;
-      if (b.due_date) return 1;
+      if (a.due_date && b.due_date) return b.due_date.localeCompare(a.due_date);
+      if (a.due_date) return 1;
+      if (b.due_date) return -1;
       return 0;
     });
 
