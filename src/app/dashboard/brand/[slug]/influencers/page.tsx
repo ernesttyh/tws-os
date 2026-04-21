@@ -22,6 +22,10 @@ interface Invitation {
   confirmed: boolean;
   attended: boolean;
   posted: boolean;
+  ig_posted: boolean;
+  tt_posted: boolean;
+  xhs_posted: boolean;
+  l8_posted: boolean;
   post_url: string | null;
   notes: string | null;
   created_at: string;
@@ -30,6 +34,8 @@ interface Invitation {
     name: string;
     instagram_handle: string | null;
     tiktok_handle: string | null;
+    xhs_handle: string | null;
+    lemon8_handle: string | null;
     tier: string | null;
     followers_ig: number | null;
   };
@@ -64,6 +70,54 @@ function formatFollowers(n: number | null) {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return n.toString();
+}
+
+// Platform link helpers
+function igProfileUrl(handle: string | null): string | null {
+  if (!handle) return null;
+  const clean = handle.replace(/^@/, '').trim();
+  return clean ? `https://instagram.com/${clean}` : null;
+}
+function ttProfileUrl(handle: string | null): string | null {
+  if (!handle) return null;
+  const clean = handle.replace(/^@/, '').trim();
+  return clean ? `https://tiktok.com/@${clean}` : null;
+}
+function xhsProfileUrl(handle: string | null): string | null {
+  if (!handle) return null;
+  const clean = handle.trim();
+  return clean ? `https://xiaohongshu.com/search_result?keyword=${encodeURIComponent(clean)}` : null;
+}
+function l8ProfileUrl(handle: string | null): string | null {
+  if (!handle) return null;
+  const clean = handle.replace(/^@/, '').trim();
+  return clean ? `https://lemon8-app.com/${clean}` : null;
+}
+
+// Platform post icon component
+function PlatformPostBadge({ label, emoji, posted, profileUrl, onToggle }: { label: string; emoji: string; posted: boolean; profileUrl: string | null; onToggle: () => void }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      <button
+        onClick={onToggle}
+        title={`Toggle ${label} posted`}
+        className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs transition ${posted ? 'bg-purple-100 text-purple-600 ring-1 ring-purple-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+      >
+        {emoji}
+      </button>
+      {posted && profileUrl && (
+        <a
+          href={profileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`View ${label} profile`}
+          className="w-4 h-4 sm:w-5 sm:h-5 rounded flex items-center justify-center text-purple-500 hover:text-purple-700 hover:bg-purple-50 transition"
+        >
+          <ExternalLink size={10} />
+        </a>
+      )}
+    </div>
+  );
 }
 
 export default function InfluencersPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -108,12 +162,11 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
     setTrackingLoading(true);
     let query = supabase
       .from('influencer_invitations')
-      .select('*, influencer:influencers(id, name, instagram_handle, tiktok_handle, tier, followers_ig)')
+      .select('*, influencer:influencers(id, name, instagram_handle, tiktok_handle, xhs_handle, lemon8_handle, tier, followers_ig)')
       .eq('brand_id', bid)
       .order('event_month', { ascending: false });
 
     if (month !== 'all') {
-      // event_month is a date column stored as YYYY-MM-01, so append -01 for matching
       query = query.eq('event_month', `${month}-01`);
     }
 
@@ -135,10 +188,24 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
   }, [trackingMonth, brandId, loadInvitations]);
 
   // Toggle invitation field
-  const toggleInvitationField = async (invId: string, field: 'invited' | 'confirmed' | 'attended' | 'posted', current: boolean) => {
+  const toggleInvitationField = async (invId: string, field: 'invited' | 'confirmed' | 'attended' | 'posted' | 'ig_posted' | 'tt_posted' | 'xhs_posted' | 'l8_posted', current: boolean) => {
+    const updates: Record<string, boolean> = { [field]: !current };
+    // If toggling a platform field ON, also set posted = true
+    if (['ig_posted', 'tt_posted', 'xhs_posted', 'l8_posted'].includes(field) && !current) {
+      updates.posted = true;
+    }
+    // If toggling a platform field OFF, check if any others are still on
+    if (['ig_posted', 'tt_posted', 'xhs_posted', 'l8_posted'].includes(field) && current) {
+      const inv = invitations.find(i => i.id === invId);
+      if (inv) {
+        const platforms = { ig_posted: inv.ig_posted, tt_posted: inv.tt_posted, xhs_posted: inv.xhs_posted, l8_posted: inv.l8_posted, [field]: false };
+        const anyPosted = platforms.ig_posted || platforms.tt_posted || platforms.xhs_posted || platforms.l8_posted;
+        if (!anyPosted) updates.posted = false;
+      }
+    }
     const { error } = await supabase
       .from('influencer_invitations')
-      .update({ [field]: !current })
+      .update(updates)
       .eq('id', invId);
     if (!error && brandId) loadInvitations(brandId, trackingMonth);
   };
@@ -171,7 +238,6 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
 
   const createInvitation = async (influencerId: string) => {
     if (!brandId) return;
-    // Check if already invited this month
     const existing = invitations.find(inv => inv.influencer_id === influencerId && inv.event_month?.startsWith(inviteMonth));
     if (existing) { alert('This KOL is already invited for this month.'); return; }
     const { error } = await supabase
@@ -184,6 +250,10 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
         confirmed: false,
         attended: false,
         posted: false,
+        ig_posted: false,
+        tt_posted: false,
+        xhs_posted: false,
+        l8_posted: false,
       });
     if (!error) {
       loadInvitations(brandId, trackingMonth);
@@ -222,7 +292,6 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
     posted: invitations.filter(inv => inv.posted).length,
   };
 
-  // Helper to display month label for each invitation row when in "All Months" view
   const getInvMonthLabel = (eventMonth: string | null) => {
     if (!eventMonth) return '';
     const d = new Date(eventMonth);
@@ -280,16 +349,26 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             </div>
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1">✅ Confirmed</div>
-              <span className="text-xl sm:text-2xl font-bold text-green-400">{trackingStats.confirmed}</span>
+              <span className="text-xl sm:text-2xl font-bold text-green-600">{trackingStats.confirmed}</span>
             </div>
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1">🎯 Attended</div>
-              <span className="text-xl sm:text-2xl font-bold text-blue-400">{trackingStats.attended}</span>
+              <span className="text-xl sm:text-2xl font-bold text-blue-600">{trackingStats.attended}</span>
             </div>
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1">📱 Posted</div>
-              <span className="text-xl sm:text-2xl font-bold text-purple-400">{trackingStats.posted}</span>
+              <span className="text-xl sm:text-2xl font-bold text-purple-600">{trackingStats.posted}</span>
             </div>
+          </div>
+
+          {/* Platform Legend */}
+          <div className="flex items-center gap-3 text-[10px] sm:text-xs text-gray-500 px-1">
+            <span className="font-medium text-gray-700">Platform posts:</span>
+            <span>📸 Instagram</span>
+            <span>🎵 TikTok</span>
+            <span>📕 XHS</span>
+            <span>🍋 Lemon8</span>
+            <span className="text-purple-500 ml-1">↗ = view profile</span>
           </div>
 
           {/* Invitations Table */}
@@ -305,33 +384,34 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
               action={{ label: 'Invite KOL', onClick: () => { setShowInviteModal(true); setInviteSearch(''); setInviteResults([]); } }}
             />
           ) : (
-            <div className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-200">
+                    <tr className="border-b border-gray-200 bg-gray-50">
                       <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-500">KOL</th>
                       {trackingMonth === 'all' && <th className="text-left py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Month</th>}
-                      <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-500 hidden sm:table-cell">Handle</th>
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Invited</th>
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Confirmed</th>
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Attended</th>
-                      <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Posted</th>
-                      <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-500 hidden sm:table-cell">Post URL</th>
-                      <th className="text-right py-3 px-3 text-xs font-medium text-gray-500">Actions</th>
+                      <th className="text-center py-3 px-2 sm:px-4 text-xs font-medium text-gray-500">Posts</th>
+                      <th className="text-right py-3 px-3 text-xs font-medium text-gray-500"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {invitations.map(inv => (
-                      <tr key={inv.id} className="border-b border-gray-200 hover:bg-gray-50 transition">
+                      <tr key={inv.id} className="border-b border-gray-100 hover:bg-gray-50/50 transition">
                         <td className="py-3 px-3 sm:px-4">
                           <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-gray-900 font-bold text-[10px] sm:text-xs shrink-0">
+                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-[10px] sm:text-xs shrink-0">
                               {(inv.influencer?.name || '?').charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
                               <span className="text-gray-900 text-xs sm:text-sm font-medium truncate block">{inv.influencer?.name || 'Unknown'}</span>
-                              {inv.influencer?.tier && <span className="text-[9px] sm:text-[10px] text-gray-500 capitalize">{inv.influencer.tier}</span>}
+                              <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] text-gray-500">
+                                {inv.influencer?.instagram_handle && <span>@{inv.influencer.instagram_handle.replace('@', '')}</span>}
+                                {inv.influencer?.tier && <span className="capitalize">· {inv.influencer.tier}</span>}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -340,16 +420,10 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                             <span className="text-[10px] sm:text-xs text-gray-500 whitespace-nowrap">{getInvMonthLabel(inv.event_month)}</span>
                           </td>
                         )}
-                        <td className="py-3 px-3 sm:px-4 hidden sm:table-cell">
-                          <div className="text-xs text-gray-500 space-y-0.5">
-                            {inv.influencer?.instagram_handle && <div>📸 @{inv.influencer.instagram_handle.replace('@', '')}</div>}
-                            {inv.influencer?.tiktok_handle && <div>🎵 @{inv.influencer.tiktok_handle.replace('@', '')}</div>}
-                          </div>
-                        </td>
                         <td className="py-3 px-2 sm:px-3 text-center">
                           <button
                             onClick={() => toggleInvitationField(inv.id, 'invited', inv.invited)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.invited ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.invited ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
                           >
                             {inv.invited ? <Check size={14} /> : <X size={14} />}
                           </button>
@@ -357,7 +431,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                         <td className="py-3 px-2 sm:px-3 text-center">
                           <button
                             onClick={() => toggleInvitationField(inv.id, 'confirmed', inv.confirmed)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.confirmed ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.confirmed ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
                           >
                             {inv.confirmed ? <Check size={14} /> : <X size={14} />}
                           </button>
@@ -365,40 +439,56 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                         <td className="py-3 px-2 sm:px-3 text-center">
                           <button
                             onClick={() => toggleInvitationField(inv.id, 'attended', inv.attended)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.attended ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
+                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.attended ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
                           >
                             {inv.attended ? <Check size={14} /> : <X size={14} />}
                           </button>
                         </td>
-                        <td className="py-3 px-2 sm:px-3 text-center">
-                          <button
-                            onClick={() => toggleInvitationField(inv.id, 'posted', inv.posted)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.posted ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}
-                          >
-                            {inv.posted ? <Check size={14} /> : <X size={14} />}
-                          </button>
-                        </td>
-                        <td className="py-3 px-3 sm:px-4 hidden sm:table-cell">
-                          {inv.post_url ? (
-                            <a href={inv.post_url} target="_blank" rel="noopener noreferrer" className="text-xs text-purple-400 hover:text-purple-300 inline-flex items-center gap-1">
-                              <ExternalLink size={11} /> View
-                            </a>
-                          ) : inv.posted ? (
-                            <input
-                              type="text"
-                              placeholder="Paste URL..."
-                              className="bg-gray-50 border border-gray-200 rounded px-2 py-1 text-xs text-gray-900 w-full max-w-[140px] placeholder:text-gray-600 focus:outline-none focus:border-purple-500"
-                              onBlur={e => { if (e.target.value) updatePostUrl(inv.id, e.target.value); }}
-                              onKeyDown={e => { if (e.key === 'Enter') { const target = e.target as HTMLInputElement; if (target.value) { updatePostUrl(inv.id, target.value); target.blur(); } } }}
+                        {/* Platform Posts Column */}
+                        <td className="py-2 px-2 sm:px-4">
+                          <div className="flex items-center justify-center gap-1 sm:gap-1.5 flex-wrap">
+                            <PlatformPostBadge
+                              label="Instagram"
+                              emoji="📸"
+                              posted={inv.ig_posted}
+                              profileUrl={igProfileUrl(inv.influencer?.instagram_handle)}
+                              onToggle={() => toggleInvitationField(inv.id, 'ig_posted', inv.ig_posted)}
                             />
-                          ) : (
-                            <span className="text-xs text-gray-600">-</span>
+                            <PlatformPostBadge
+                              label="TikTok"
+                              emoji="🎵"
+                              posted={inv.tt_posted}
+                              profileUrl={ttProfileUrl(inv.influencer?.tiktok_handle)}
+                              onToggle={() => toggleInvitationField(inv.id, 'tt_posted', inv.tt_posted)}
+                            />
+                            <PlatformPostBadge
+                              label="XHS"
+                              emoji="📕"
+                              posted={inv.xhs_posted}
+                              profileUrl={xhsProfileUrl(inv.influencer?.xhs_handle)}
+                              onToggle={() => toggleInvitationField(inv.id, 'xhs_posted', inv.xhs_posted)}
+                            />
+                            <PlatformPostBadge
+                              label="Lemon8"
+                              emoji="🍋"
+                              posted={inv.l8_posted}
+                              profileUrl={l8ProfileUrl(inv.influencer?.lemon8_handle)}
+                              onToggle={() => toggleInvitationField(inv.id, 'l8_posted', inv.l8_posted)}
+                            />
+                          </div>
+                          {/* Post URL - shown below platform icons if it exists */}
+                          {inv.post_url && (
+                            <div className="mt-1 text-center">
+                              <a href={inv.post_url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-purple-500 hover:text-purple-700 inline-flex items-center gap-0.5">
+                                <ExternalLink size={9} /> View Post
+                              </a>
+                            </div>
                           )}
                         </td>
                         <td className="py-3 px-3 text-right">
                           <button
                             onClick={() => deleteInvitation(inv.id)}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-red-400 transition"
+                            className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500 transition"
                             title="Remove invitation"
                           >
                             <X size={14} />
@@ -425,27 +515,27 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             </div>
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1"><Instagram size={14} />With IG</div>
-              <span className="text-xl sm:text-2xl font-bold text-purple-400">{influencers.filter(i => i.instagram_handle).length}+</span>
+              <span className="text-xl sm:text-2xl font-bold text-purple-600">{influencers.filter(i => i.instagram_handle).length}+</span>
             </div>
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1"><TrendingUp size={14} />With TikTok</div>
-              <span className="text-xl sm:text-2xl font-bold text-blue-400">{influencers.filter(i => i.tiktok_handle).length}+</span>
+              <span className="text-xl sm:text-2xl font-bold text-blue-600">{influencers.filter(i => i.tiktok_handle).length}+</span>
             </div>
             <div className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1"><Star size={14} />Campaigns</div>
-              <span className="text-xl sm:text-2xl font-bold text-green-400">{campaigns.length}</span>
+              <span className="text-xl sm:text-2xl font-bold text-green-600">{campaigns.length}</span>
             </div>
           </div>
 
           {/* Search & Filters */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input type="text" value={dbSearch} onChange={e => { setDbSearch(e.target.value); setDbPage(0); }} placeholder="Search by name or handle..." className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm placeholder:text-gray-500 focus:outline-none focus:border-purple-500" />
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input type="text" value={dbSearch} onChange={e => { setDbSearch(e.target.value); setDbPage(0); }} placeholder="Search by name or handle..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:border-purple-500" />
             </div>
-            <select value={dbTier} onChange={e => { setDbTier(e.target.value); setDbPage(0); }} className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm">
-              <option value="all" className="bg-white">All Tiers</option>
-              {TIERS.map(t => <option key={t.value} value={t.value} className="bg-white">{t.label}</option>)}
+            <select value={dbTier} onChange={e => { setDbTier(e.target.value); setDbPage(0); }} className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-gray-900 text-sm">
+              <option value="all">All Tiers</option>
+              {TIERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
 
@@ -460,43 +550,43 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {influencers.map(inf => (
-                  <div key={inf.id} className="bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200 hover:border-purple-500/30 transition group">
+                  <div key={inf.id} className="bg-white rounded-lg p-3 sm:p-4 border border-gray-200 hover:border-purple-300 hover:shadow-sm transition group">
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-gray-900 font-bold text-sm shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
                         {(inf.name || inf.instagram_handle || '?').charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0 flex-1">
                         <h3 className="text-sm font-medium text-gray-900 truncate">{inf.name || inf.instagram_handle || 'Unknown'}</h3>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {inf.tier && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 capitalize">{inf.tier}</span>}
+                          {inf.tier && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-600 capitalize">{inf.tier}</span>}
                           {inf.influencer_type && <span className="text-[10px] text-gray-500 truncate max-w-[120px]">{inf.influencer_type}</span>}
                         </div>
                       </div>
                     </div>
 
-                    {/* Platform handles */}
+                    {/* Platform handles with links */}
                     <div className="mt-2.5 space-y-1">
                       {inf.instagram_handle && (
                         <div className="flex items-center justify-between text-[10px] sm:text-xs">
-                          <span className="text-gray-500">📸 @{inf.instagram_handle.replace('@', '')}</span>
+                          <a href={igProfileUrl(inf.instagram_handle) || '#'} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-purple-600 transition">📸 @{inf.instagram_handle.replace('@', '')} ↗</a>
                           <span className="text-gray-900 font-medium">{formatFollowers(inf.followers_ig)}</span>
                         </div>
                       )}
                       {inf.tiktok_handle && (
                         <div className="flex items-center justify-between text-[10px] sm:text-xs">
-                          <span className="text-gray-500">🎵 @{inf.tiktok_handle.replace('@', '')}</span>
+                          <a href={ttProfileUrl(inf.tiktok_handle) || '#'} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-purple-600 transition">🎵 @{inf.tiktok_handle.replace('@', '')} ↗</a>
                           <span className="text-gray-900 font-medium">{formatFollowers(inf.followers_tiktok)}</span>
                         </div>
                       )}
                       {inf.lemon8_handle && (
                         <div className="flex items-center justify-between text-[10px] sm:text-xs">
-                          <span className="text-gray-500">🍋 {inf.lemon8_handle}</span>
+                          <a href={l8ProfileUrl(inf.lemon8_handle) || '#'} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-purple-600 transition">🍋 {inf.lemon8_handle} ↗</a>
                           <span className="text-gray-900 font-medium">{formatFollowers(inf.followers_lemon8)}</span>
                         </div>
                       )}
                       {inf.xhs_handle && (
                         <div className="flex items-center justify-between text-[10px] sm:text-xs">
-                          <span className="text-gray-500">📕 {inf.xhs_handle}</span>
+                          <a href={xhsProfileUrl(inf.xhs_handle) || '#'} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-purple-600 transition">📕 {inf.xhs_handle} ↗</a>
                           <span className="text-gray-900 font-medium">{formatFollowers(inf.followers_xhs)}</span>
                         </div>
                       )}
@@ -517,8 +607,8 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                 <div className="flex items-center justify-between pt-2">
                   <span className="text-xs text-gray-500">Showing {dbPage * 50 + 1}-{Math.min((dbPage + 1) * 50, totalInfluencers)} of {totalInfluencers}</span>
                   <div className="flex gap-2">
-                    <button onClick={() => setDbPage(p => Math.max(0, p - 1))} disabled={dbPage === 0} className="px-3 py-1.5 text-xs bg-gray-50 rounded-lg text-gray-500 hover:text-gray-900 disabled:opacity-30">← Prev</button>
-                    <button onClick={() => setDbPage(p => p + 1)} disabled={(dbPage + 1) * 50 >= totalInfluencers} className="px-3 py-1.5 text-xs bg-gray-50 rounded-lg text-gray-500 hover:text-gray-900 disabled:opacity-30">Next →</button>
+                    <button onClick={() => setDbPage(p => Math.max(0, p - 1))} disabled={dbPage === 0} className="px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 disabled:opacity-30">← Prev</button>
+                    <button onClick={() => setDbPage(p => p + 1)} disabled={(dbPage + 1) * 50 >= totalInfluencers} className="px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900 disabled:opacity-30">Next →</button>
                   </div>
                 </div>
               )}
@@ -548,7 +638,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex gap-1 sm:gap-2 overflow-x-auto scrollbar-hide pb-1 sm:pb-0">
               {['all', 'confirmed', 'active', 'completed', 'prospecting'].map(s => (
-                <button key={s} onClick={() => setFilter(s)} className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === s ? 'bg-purple-600 text-white' : 'bg-gray-50 text-gray-500 hover:text-gray-900'}`}>
+                <button key={s} onClick={() => setFilter(s)} className={`px-2 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === s ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-600 hover:text-gray-900'}`}>
                   {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
                 </button>
               ))}
@@ -561,10 +651,10 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               {filtered.map(c => (
-                <div key={c.id} className="bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200 hover:border-gray-300 transition">
+                <div key={c.id} className="bg-white rounded-lg p-3 sm:p-4 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-gray-900 font-bold text-xs sm:text-sm shrink-0">{c.influencer.name.charAt(0)}</div>
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xs sm:text-sm shrink-0">{c.influencer.name.charAt(0)}</div>
                       <div className="min-w-0">
                         <h3 className="text-gray-900 font-medium text-sm truncate">{c.influencer.name}</h3>
                         {c.influencer.instagram_handle && <span className="text-[10px] sm:text-xs text-gray-500">@{c.influencer.instagram_handle}</span>}
@@ -586,7 +676,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                       {c.reach && <span>📊 {c.reach.toLocaleString()}</span>}
                     </div>
                   )}
-                  {c.post_url && <a href={c.post_url} target="_blank" rel="noopener" className="text-[10px] sm:text-xs text-purple-400 hover:text-purple-300 mt-1.5 sm:mt-2 inline-block">View Post →</a>}
+                  {c.post_url && <a href={c.post_url} target="_blank" rel="noopener" className="text-[10px] sm:text-xs text-purple-500 hover:text-purple-700 mt-1.5 sm:mt-2 inline-block">View Post →</a>}
                 </div>
               ))}
             </div>
@@ -613,7 +703,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
           <FormField label="Post Date" name="post_date" type="date" value={form.post_date} onChange={e => setForm(f => ({ ...f, post_date: e.target.value }))} />
           <FormField label="Notes" name="notes" type="textarea" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} />
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-500">Cancel</button>
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">Cancel</button>
             <button onClick={save} disabled={!form.influencer_name} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Add KOL</button>
           </div>
         </div>
@@ -623,13 +713,13 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
       <Modal open={showInviteModal} onClose={() => { setShowInviteModal(false); setInviteSearch(''); setInviteResults([]); }} title={`Invite KOL — ${formatTrackingMonth(inviteMonth)}`} size="md">
         <div className="space-y-4">
           <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               value={inviteSearch}
               onChange={e => setInviteSearch(e.target.value)}
               placeholder="Search KOLs by name or handle..."
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm placeholder:text-gray-500 focus:outline-none focus:border-purple-500"
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 text-sm placeholder:text-gray-400 focus:outline-none focus:border-purple-500"
             />
           </div>
 
@@ -646,7 +736,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                 return (
                   <div key={inf.id} className="flex items-center justify-between p-2.5 sm:p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-gray-300 transition">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-gray-900 font-bold text-xs shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xs shrink-0">
                         {(inf.name || '?').charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
@@ -659,7 +749,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                       </div>
                     </div>
                     {alreadyInvited ? (
-                      <span className="text-[10px] sm:text-xs text-green-400 px-2 py-1 bg-green-500/10 rounded">Invited ✓</span>
+                      <span className="text-[10px] sm:text-xs text-green-600 px-2 py-1 bg-green-50 rounded border border-green-200">Invited ✓</span>
                     ) : (
                       <button
                         onClick={() => createInvitation(inf.id)}
