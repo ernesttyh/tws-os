@@ -10,9 +10,11 @@ import { Search, LayoutDashboard, Settings, ChevronDown, ChevronRight } from 'lu
 
 interface SidebarProps {
   onNavigate?: () => void
+  isOpen?: boolean
+  onClose?: () => void
 }
 
-export default function Sidebar({ onNavigate }: SidebarProps) {
+export default function Sidebar({ onNavigate, isOpen, onClose }: SidebarProps) {
   const [brands, setBrands] = useState<Brand[]>([])
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
