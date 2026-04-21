@@ -7,21 +7,33 @@ import FormField from '@/components/ui/FormField';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PriorityBadge from '@/components/ui/PriorityBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight, ArrowLeft, Save, Clock, Building2, Search, X } from 'lucide-react';
+import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight, ArrowLeft, Save, Clock, Building2, Search, X, Upload, Sparkles, ListTodo, GripVertical, MoreHorizontal, Filter } from 'lucide-react';
 
 // Lazy-load TipTap editor (big bundle, no SSR)
 const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), { ssr: false, loading: () => <div className="h-64 bg-gray-50 rounded-lg animate-pulse" /> });
 
 type Tab = 'meetings' | 'tasks' | 'cadence';
 type MeetingView = 'brand' | 'group';
+type TaskViewMode = 'table' | 'kanban';
 
 interface Brand { id: string; name: string; slug: string; brand_group: string }
 interface Meeting { id: string; brand_id: string; title: string; meeting_date: string; meeting_type: string; content: string | null; source: string; action_items_extracted: boolean; transcript_raw: string | null; creator?: { id: string; name: string } | null; brand?: { name: string; slug: string } | null }
-interface Task { id: string; title: string; description: string | null; status: string; priority: string; due_date: string | null; assigned_member?: { name: string } | null; tags: string[] | null }
+interface Task { id: string; title: string; description: string | null; status: string; priority: string; due_date: string | null; assigned_member?: { name: string } | null; tags: string[] | null; created_at?: string }
 
 const BRAND_GROUP_LABELS: Record<string, string> = {
   neo_group: 'Neo Group', fleursophy: 'Fleursophy', deprosperoo: 'Deprosperoo', independent: 'Independent', tsim: 'TSIM', other: 'Other'
 };
+
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: string }> = {
+  backlog: { label: 'Backlog', color: 'text-gray-500', bg: 'bg-gray-100', icon: '📋' },
+  todo: { label: 'To Do', color: 'text-blue-600', bg: 'bg-blue-50', icon: '📌' },
+  in_progress: { label: 'In Progress', color: 'text-amber-600', bg: 'bg-amber-50', icon: '🔄' },
+  review: { label: 'Review', color: 'text-purple-600', bg: 'bg-purple-50', icon: '👀' },
+  done: { label: 'Done', color: 'text-green-600', bg: 'bg-green-50', icon: '✅' },
+};
+
+const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+const STATUS_ORDER: Record<string, number> = { in_progress: 0, todo: 1, review: 2, backlog: 3, done: 4 };
 
 export default function OperationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
@@ -39,7 +51,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [editTask, setEditTask] = useState<Task | null>(null);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([]);
+  const [taskViewMode, setTaskViewMode] = useState<TaskViewMode>('table');
+  const [taskFilter, setTaskFilter] = useState<string>('active'); // 'all', 'active', status
+  const [showExtractModal, setShowExtractModal] = useState(false);
+  const [extractedTasks, setExtractedTasks] = useState<{ title: string; selected: boolean }[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createBrowserClient();
 
   // New meeting form
@@ -111,6 +129,160 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     }
   };
 
+  // File upload handler for transcripts
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFile(true);
+    try {
+      const text = await file.text();
+      // Create meeting with transcript
+      if (!brand || !newTitle.trim()) { setUploadingFile(false); return; }
+      const res = await fetch(`/api/brands/${brand.id}/meetings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTitle || `${newSource === 'plaud' ? 'Plaud' : newSource === 'whatsapp' ? 'WhatsApp' : 'Transcript'} — ${new Date(newDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+          meeting_date: newDate,
+          meeting_type: newType,
+          source: newSource,
+          transcript_raw: text,
+          content: formatTranscript(text, newSource),
+        }),
+      });
+      if (res.ok) {
+        const meeting = await res.json();
+        setMeetings(prev => [meeting, ...prev]);
+        setSelectedMeeting(meeting);
+        setIsNewMeeting(false);
+      }
+    } catch (err) { console.error('Upload failed:', err); }
+    setUploadingFile(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Format uploaded transcript into structured HTML
+  const formatTranscript = (text: string, source: string): string => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (source === 'whatsapp') {
+      // WhatsApp format: [date, time] Sender: message
+      let html = '<h2>Meeting Notes (from WhatsApp)</h2>';
+      html += '<p><em>Auto-generated from WhatsApp export. Edit and organize as needed.</em></p><hr/>';
+      const msgs = lines.map(l => {
+        const match = l.match(/^\[?([\d/]+,?\s*[\d:]+\s*(?:AM|PM)?)\]?\s*-?\s*([^:]+):\s*(.+)/i);
+        if (match) return `<p><strong>${match[2].trim()}</strong>: ${match[3].trim()}</p>`;
+        return `<p>${l}</p>`;
+      });
+      html += msgs.join('');
+      html += '<hr/><h2>Action Items</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false">Add action items here</li></ul>';
+      return html;
+    }
+    // Default: Plaud / generic transcript
+    let html = '<h2>Meeting Notes (from Transcript)</h2>';
+    html += '<p><em>Auto-generated from uploaded transcript. Edit and organize as needed.</em></p><hr/>';
+    // Try to detect speaker labels
+    const hasTimestamps = lines.some(l => /^\d{1,2}:\d{2}/.test(l.trim()));
+    const hasSpeakers = lines.some(l => /^(Speaker\s*\d+|[A-Z][a-z]+\s*[A-Z]?[a-z]*)\s*:/i.test(l.trim()));
+    if (hasSpeakers) {
+      html += lines.map(l => {
+        const match = l.match(/^([^:]+):\s*(.+)/);
+        if (match) return `<p><strong>${match[1].trim()}</strong>: ${match[2].trim()}</p>`;
+        return `<p>${l}</p>`;
+      }).join('');
+    } else {
+      html += lines.map(l => `<p>${l}</p>`).join('');
+    }
+    html += '<hr/><h2>Key Decisions</h2><ul><li>List key decisions here</li></ul>';
+    html += '<h2>Action Items</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false">Add action items here</li></ul>';
+    return html;
+  };
+
+  // Extract tasks from meeting content
+  const extractTasksFromContent = (html: string): { title: string; selected: boolean }[] => {
+    if (!html) return [];
+    const items: { title: string; selected: boolean }[] = [];
+    const seen = new Set<string>();
+
+    // 1. Extract TipTap task items (checklists)
+    const taskItemRegex = /data-type="taskItem"[^>]*>([^<]*(?:<[^/][^>]*>[^<]*)*)/gi;
+    let match;
+    while ((match = taskItemRegex.exec(html)) !== null) {
+      const text = match[1].replace(/<[^>]*>/g, '').trim();
+      if (text.length > 3 && !seen.has(text.toLowerCase())) {
+        seen.add(text.toLowerCase());
+        items.push({ title: text, selected: true });
+      }
+    }
+
+    // 2. Look for action item patterns in plain text
+    const plainText = html.replace(/<[^>]*>/g, '\n');
+    const actionPatterns = [
+      /(?:action\s*items?|follow[- ]?ups?|to[- ]?dos?|next\s*steps?)\s*:?\s*\n((?:[-•*]\s*.+\n?)+)/gi,
+      /[-•*]\s*((?:follow up|send|prepare|create|update|check|confirm|schedule|review|draft|share|organize|coordinate|plan|complete|finalize|arrange|book|set up|reach out)[^.\n]*)/gi,
+    ];
+
+    for (const pattern of actionPatterns) {
+      while ((match = pattern.exec(plainText)) !== null) {
+        const text = match[1].replace(/^[-•*]\s*/, '').trim();
+        if (text.length > 5 && text.length < 200 && !seen.has(text.toLowerCase())) {
+          seen.add(text.toLowerCase());
+          items.push({ title: text.charAt(0).toUpperCase() + text.slice(1), selected: true });
+        }
+      }
+    }
+
+    // 3. Lines starting with checkbox-like patterns
+    const lines = plainText.split('\n');
+    for (const line of lines) {
+      const cleaned = line.replace(/^[\s\-•*☐☑✓✗\[\]]+/, '').trim();
+      if (cleaned.length > 5 && cleaned.length < 200) {
+        const isAction = /^(need to|must|should|will|to |please |ensure |make sure|let'?s|action:|todo:|task:)/i.test(cleaned);
+        if (isAction && !seen.has(cleaned.toLowerCase())) {
+          seen.add(cleaned.toLowerCase());
+          items.push({ title: cleaned.charAt(0).toUpperCase() + cleaned.slice(1), selected: true });
+        }
+      }
+    }
+
+    return items;
+  };
+
+  const handleExtractTasks = () => {
+    if (!selectedMeeting?.content) return;
+    const found = extractTasksFromContent(selectedMeeting.content);
+    if (found.length === 0) {
+      alert('No action items found. Tip: Use the checklist feature (☑) in the editor to mark action items, or write lines starting with "Follow up", "Send", "Prepare", etc.');
+      return;
+    }
+    setExtractedTasks(found);
+    setShowExtractModal(true);
+  };
+
+  const createExtractedTasks = async () => {
+    if (!brand) return;
+    const selected = extractedTasks.filter(t => t.selected);
+    for (const t of selected) {
+      await fetch(`/api/brands/${brand.id}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: t.title, status: 'todo', priority: 'medium', description: `From meeting: ${selectedMeeting?.title || ''}` }),
+      });
+    }
+    // Mark meeting as extracted
+    if (selectedMeeting) {
+      await fetch(`/api/brands/${brand.id}/meetings/${selectedMeeting.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_items_extracted: true }),
+      });
+      setSelectedMeeting(prev => prev ? { ...prev, action_items_extracted: true } : prev);
+    }
+    setShowExtractModal(false);
+    setExtractedTasks([]);
+    loadData(brand);
+    setTab('tasks');
+  };
+
   // Update meeting metadata
   const updateMeetingMeta = async (meetingId: string, updates: Partial<Meeting>) => {
     if (!brand) return;
@@ -147,11 +319,37 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     loadData(brand);
   };
 
+  const quickUpdateTask = async (taskId: string, updates: Record<string, string>) => {
+    if (!brand) return;
+    await fetch(`/api/brands/${brand.id}/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
+  };
+
   const deleteTask = async (id: string) => {
     if (!brand || !confirm('Delete this task?')) return;
     await fetch(`/api/brands/${brand.id}/tasks/${id}`, { method: 'DELETE' });
     loadData(brand);
   };
+
+  // Task filtering & sorting
+  const filteredTasks = tasks
+    .filter(t => {
+      if (taskFilter === 'all') return true;
+      if (taskFilter === 'active') return t.status !== 'done';
+      return t.status === taskFilter;
+    })
+    .sort((a, b) => {
+      const sa = STATUS_ORDER[a.status] ?? 9;
+      const sb = STATUS_ORDER[b.status] ?? 9;
+      if (sa !== sb) return sa - sb;
+      const pa = PRIORITY_ORDER[a.priority] ?? 9;
+      const pb = PRIORITY_ORDER[b.priority] ?? 9;
+      if (pa !== pb) return pa - pb;
+      if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+      if (a.due_date) return -1;
+      if (b.due_date) return 1;
+      return 0;
+    });
 
   const taskStatuses = ['backlog', 'todo', 'in_progress', 'review', 'done'];
   const tasksByStatus = taskStatuses.reduce((acc, s) => { acc[s] = tasks.filter(t => t.status === s); return acc; }, {} as Record<string, Task[]>);
@@ -181,19 +379,17 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             <t.icon size={14} className="shrink-0" />
             <span className="sm:hidden">{t.shortLabel}</span>
             <span className="hidden sm:inline">{t.label}</span>
-            {t.count > 0 && <span className="ml-0.5 sm:ml-1 px-1.5 py-0.5 text-[10px] sm:text-xs rounded-full bg-gray-100">{t.count}</span>}
+            {t.count > 0 && <span className={`ml-0.5 sm:ml-1 px-1.5 py-0.5 text-[10px] sm:text-xs rounded-full ${tab === t.key ? 'bg-white/20' : 'bg-gray-200'}`}>{t.count}</span>}
           </button>
         ))}
       </div>
 
-      {/* ===== MEETINGS TAB ===== */}
+      {/* ===== MEETINGS TAB — LIST VIEW ===== */}
       {tab === 'meetings' && !selectedMeeting && !isNewMeeting && (
         <div className="space-y-3 sm:space-y-4 animate-fade-in">
-          {/* Header with view toggle */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <h2 className="text-base sm:text-lg font-semibold text-gray-900">Meeting Notes</h2>
-              {/* Brand / Group toggle */}
               <div className="flex bg-gray-50 rounded-lg p-0.5 text-xs">
                 <button onClick={() => setMeetingView('brand')} className={`px-2.5 py-1 rounded-md transition ${meetingView === 'brand' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
                   Brand
@@ -204,12 +400,11 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {/* Search */}
               <div className="relative flex-1 sm:flex-initial">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input type="text" placeholder="Search notes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg w-full sm:w-48 focus:w-64 transition-all" />
-                {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-900"><X size={12} /></button>}
+                  className="pl-8 pr-8 py-1.5 text-xs bg-white border border-gray-200 rounded-lg w-full sm:w-48 focus:w-64 transition-all focus:ring-1 focus:ring-purple-500 focus:border-purple-500" />
+                {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-900"><X size={12} /></button>}
               </div>
               <button onClick={() => { setIsNewMeeting(true); setNewTitle(''); setNewDate(new Date().toISOString().split('T')[0]); setNewType('workplan'); setNewSource('manual'); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
                 <Plus size={14} /><span className="hidden sm:inline">New Note</span><span className="sm:hidden">New</span>
@@ -217,7 +412,6 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             </div>
           </div>
 
-          {/* Meeting List */}
           {filteredMeetings.length === 0 ? (
             <EmptyState icon={FileText} title={searchQuery ? 'No matching notes' : 'No meeting notes yet'} description={searchQuery ? 'Try a different search term' : 'Create your first meeting note — it works like a mini Google Doc!'} action={searchQuery ? undefined : { label: 'Create Note', onClick: () => setIsNewMeeting(true) }} />
           ) : (
@@ -226,24 +420,26 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                 const plainText = m.content?.replace(/<[^>]*>/g, '').trim() || '';
                 const preview = plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '');
                 return (
-                  <div key={m.id} onClick={() => setSelectedMeeting(m)} className="bg-gray-50 rounded-lg border border-gray-200 hover:border-purple-500/40 p-3 sm:p-4 cursor-pointer transition group">
+                  <div key={m.id} onClick={() => setSelectedMeeting(m)} className="bg-white rounded-lg border border-gray-200 hover:border-purple-400 p-3 sm:p-4 cursor-pointer transition group">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           {meetingView === 'group' && m.brand?.name && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-300">{m.brand.name}</span>
+                            <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-100 text-purple-700">{m.brand.name}</span>
                           )}
                           <span className="text-sm text-gray-900 font-medium truncate">{m.title}</span>
                           <StatusBadge status={m.meeting_type} />
+                          {m.source !== 'manual' && (
+                            <span className="px-1.5 py-0.5 text-[9px] rounded bg-blue-50 text-blue-600 font-medium">{m.source === 'plaud' ? '🎙️ Plaud' : m.source === 'whatsapp' ? '💬 WA' : '📄 Upload'}</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500">
                           <span>{new Date(m.meeting_date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
                           {m.creator?.name && <span>• {m.creator.name}</span>}
-                          <span className="badge-neutral badge text-[9px]">{m.source}</span>
                         </div>
                         {preview && <p className="text-xs text-gray-500 mt-1.5 line-clamp-2">{preview}</p>}
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); deleteMeeting(m.id); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-red-400 transition shrink-0">
+                      <button onClick={(e) => { e.stopPropagation(); deleteMeeting(m.id); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition shrink-0">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -264,27 +460,60 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             </button>
             <h2 className="text-base sm:text-lg font-semibold text-gray-900">New Meeting Note</h2>
           </div>
-          <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 sm:p-6 space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-4 sm:p-6 space-y-4">
             <FormField label="Title" name="title" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. April Workplan Meeting — Korea Culture" required />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="Date" name="meeting_date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
               <FormField label="Type" name="meeting_type" value={newType} onChange={e => setNewType(e.target.value)} options={[{ value: 'workplan', label: '📋 Workplan' }, { value: 'review', label: '🔍 Review' }, { value: 'brainstorm', label: '💡 Brainstorm' }, { value: 'adhoc', label: '⚡ Ad-hoc' }]} />
-              <FormField label="Source" name="source" value={newSource} onChange={e => setNewSource(e.target.value)} options={[{ value: 'manual', label: '✍️ Manual' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }]} />
+              <FormField label="Source" name="source" value={newSource} onChange={e => setNewSource(e.target.value)} options={[{ value: 'manual', label: '✍️ Type Manually' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }, { value: 'transcript', label: '📄 Upload Transcript' }]} />
             </div>
+
+            {/* File upload section for non-manual sources */}
+            {newSource !== 'manual' && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-purple-100 rounded-lg shrink-0">
+                    <Upload size={20} className="text-purple-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium text-purple-900">
+                      {newSource === 'plaud' ? 'Upload Plaud Recording/Transcript' : newSource === 'whatsapp' ? 'Upload WhatsApp Export' : 'Upload Transcript File'}
+                    </h4>
+                    <p className="text-xs text-purple-700 mt-1">
+                      {newSource === 'plaud' ? 'Export your Plaud transcript as .txt and upload it here. The system will format it into meeting notes.' :
+                       newSource === 'whatsapp' ? 'Export your WhatsApp chat (without media) and upload the .txt file. Messages will be formatted into notes.' :
+                       'Upload a .txt transcript file. Speaker labels and timestamps will be detected and formatted.'}
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".txt,.doc,.docx,.pdf"
+                      onChange={handleFileUpload}
+                      className="mt-3 text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer"
+                      disabled={!newTitle.trim() || uploadingFile}
+                    />
+                    {!newTitle.trim() && <p className="text-[10px] text-amber-600 mt-1">⚠️ Enter a title first before uploading</p>}
+                    {uploadingFile && <p className="text-xs text-purple-600 mt-2 flex items-center gap-1.5"><Clock size={12} className="animate-spin" /> Processing file...</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => setIsNewMeeting(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition">Cancel</button>
-              <button onClick={createMeeting} disabled={!newTitle.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
-                <FileText size={14} /> Create & Start Writing
-              </button>
+              {newSource === 'manual' && (
+                <button onClick={createMeeting} disabled={!newTitle.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
+                  <FileText size={14} /> Create & Start Writing
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ===== MEETING EDITOR (inline doc view) ===== */}
+      {/* ===== MEETING EDITOR ===== */}
       {tab === 'meetings' && selectedMeeting && (
         <div className="space-y-3 animate-fade-in">
-          {/* Editor header */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
               <button onClick={() => { setSelectedMeeting(null); if (brand) { loadData(brand); loadGroupMeetings(brand); } }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition shrink-0">
@@ -302,78 +531,202 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Save indicator */}
-              {saveStatus === 'saving' && <span className="text-xs text-yellow-400 flex items-center gap-1"><Clock size={12} className="animate-spin" /> Saving...</span>}
-              {saveStatus === 'saved' && <span className="text-xs text-green-400 flex items-center gap-1"><Save size={12} /> Saved</span>}
-              {/* Metadata edit */}
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {saveStatus === 'saving' && <span className="text-xs text-amber-500 flex items-center gap-1"><Clock size={12} className="animate-spin" /> Saving...</span>}
+              {saveStatus === 'saved' && <span className="text-xs text-green-600 flex items-center gap-1"><Save size={12} /> Saved</span>}
+              
+              {/* Extract Tasks button */}
+              <button onClick={handleExtractTasks} className="flex items-center gap-1.5 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs rounded-lg transition border border-amber-200" title="Extract action items as tasks">
+                <ListTodo size={13} /><span className="hidden sm:inline">Extract Tasks</span>
+              </button>
+
               <select value={selectedMeeting.meeting_type} onChange={e => { const val = e.target.value; setSelectedMeeting(prev => prev ? { ...prev, meeting_type: val } : prev); updateMeetingMeta(selectedMeeting.id, { meeting_type: val }); }}
-                className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1">
+                className="text-xs bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:ring-1 focus:ring-purple-500">
                 <option value="workplan">📋 Workplan</option>
                 <option value="review">🔍 Review</option>
                 <option value="brainstorm">💡 Brainstorm</option>
                 <option value="adhoc">⚡ Ad-hoc</option>
               </select>
-              <button onClick={() => deleteMeeting(selectedMeeting.id)} className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition">
+              <button onClick={() => deleteMeeting(selectedMeeting.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
                 <Trash2 size={16} />
               </button>
             </div>
           </div>
 
-          {/* Rich Text Editor */}
           <RichTextEditor
             content={selectedMeeting.content || ''}
             onChange={(html) => handleContentChange(selectedMeeting.id, html)}
-            placeholder="Start writing your meeting notes here...&#10;&#10;💡 Tips:&#10;• Use headings for sections (Agenda, Decisions, Action Items)&#10;• Use checklists to track action items&#10;• Your notes auto-save as you type"
+            placeholder={"Start writing your meeting notes here...\n\n💡 Tips:\n• Use headings for sections (Agenda, Decisions, Action Items)\n• Use checklists to track action items\n• Click 'Extract Tasks' to generate tasks from your notes\n• Your notes auto-save as you type"}
             autoFocus
           />
 
-          {/* Transcript section (if available) */}
           {selectedMeeting.transcript_raw && (
             <details className="bg-gray-50 rounded-lg border border-gray-200 p-3 sm:p-4">
-              <summary className="text-xs sm:text-sm text-gray-500 cursor-pointer hover:text-gray-600 font-medium">📝 Raw Transcript</summary>
-              <pre className="mt-3 text-xs text-gray-500 whitespace-pre-wrap bg-black/20 rounded p-3 max-h-48 overflow-y-auto">{selectedMeeting.transcript_raw}</pre>
+              <summary className="text-xs sm:text-sm text-gray-600 cursor-pointer hover:text-gray-900 font-medium">📝 Raw Transcript</summary>
+              <pre className="mt-3 text-xs text-gray-600 whitespace-pre-wrap bg-gray-100 rounded p-3 max-h-48 overflow-y-auto">{selectedMeeting.transcript_raw}</pre>
             </details>
           )}
         </div>
       )}
 
-      {/* ===== TASKS TAB - Kanban Board ===== */}
+      {/* ===== TASKS TAB ===== */}
       {tab === 'tasks' && (
         <div className="space-y-3 sm:space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900">Task Board</h2>
-            <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
-              <Plus size={14} /><span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
-            </button>
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
-            {taskStatuses.map(status => (
-              <div key={status} className="bg-gray-50 rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] sm:text-xs font-semibold text-gray-500 uppercase">{status.replace('_', ' ')}</span>
-                  <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
-                </div>
-                <div className="space-y-2">
-                  {(tasksByStatus[status] || []).map(task => (
-                    <div key={task.id} className="bg-white rounded-lg p-2.5 sm:p-3 border border-gray-200 hover:border-gray-300 transition cursor-pointer group"
-                         onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
-                      <div className="flex items-start justify-between">
-                        <span className="text-xs sm:text-sm text-gray-900 font-medium leading-tight">{task.title}</span>
-                        <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
-                      </div>
-                      {task.description && <p className="text-[10px] sm:text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</p>}
-                      <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
-                        <PriorityBadge priority={task.priority} />
-                        {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-500">→ {task.assigned_member.name}</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">Task Board</h2>
+              {/* View mode toggle */}
+              <div className="flex bg-gray-100 rounded-lg p-0.5 text-xs">
+                <button onClick={() => setTaskViewMode('table')} className={`px-2.5 py-1 rounded-md transition ${taskViewMode === 'table' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
+                  Table
+                </button>
+                <button onClick={() => setTaskViewMode('kanban')} className={`px-2.5 py-1 rounded-md transition ${taskViewMode === 'kanban' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
+                  Kanban
+                </button>
               </div>
-            ))}
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Filter */}
+              {taskViewMode === 'table' && (
+                <select value={taskFilter} onChange={e => setTaskFilter(e.target.value)} className="text-xs bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-purple-500">
+                  <option value="active">Active Tasks</option>
+                  <option value="all">All Tasks</option>
+                  {taskStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.icon} {STATUS_CONFIG[s]?.label || s}</option>)}
+                </select>
+              )}
+              <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
+                <Plus size={14} /><span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
+              </button>
+            </div>
           </div>
+
+          {/* TABLE VIEW (default, mobile-friendly) */}
+          {taskViewMode === 'table' && (
+            filteredTasks.length === 0 ? (
+              <EmptyState icon={CheckSquare} title="No tasks yet" description="Create tasks manually or extract them from meeting notes." action={{ label: 'Create Task', onClick: () => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); } }} />
+            ) : (
+              <>
+                {/* Desktop table */}
+                <div className="hidden sm:block bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200">
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-8">Status</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Task</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Priority</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-32">Assignee</th>
+                        <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wider w-28">Due Date</th>
+                        <th className="w-16"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredTasks.map(task => {
+                        const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.backlog;
+                        const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
+                        return (
+                          <tr key={task.id} className="hover:bg-gray-50 transition group cursor-pointer"
+                              onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <select value={task.status} onChange={e => quickUpdateTask(task.id, { status: e.target.value })}
+                                className={`text-xs font-medium rounded-md px-1.5 py-1 border-0 cursor-pointer ${sc.bg} ${sc.color} focus:ring-1 focus:ring-purple-500`}>
+                                {taskStatuses.map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.icon} {STATUS_CONFIG[s]?.label}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-gray-900">{task.title}</div>
+                              {task.description && <div className="text-xs text-gray-500 mt-0.5 line-clamp-1">{task.description}</div>}
+                            </td>
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <select value={task.priority} onChange={e => quickUpdateTask(task.id, { priority: e.target.value })}
+                                className="text-xs font-medium bg-transparent border-0 cursor-pointer focus:ring-1 focus:ring-purple-500 rounded-md p-1">
+                                <option value="urgent">🔴 Urgent</option>
+                                <option value="high">🟠 High</option>
+                                <option value="medium">🟡 Medium</option>
+                                <option value="low">⚪ Low</option>
+                              </select>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-gray-600">{task.assigned_member?.name || '—'}</td>
+                            <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
+                              {task.due_date ? (isOverdue ? '⚠️ ' : '') + new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
+                            </td>
+                            <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => deleteTask(task.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500 transition">
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile card list */}
+                <div className="sm:hidden space-y-2">
+                  {filteredTasks.map(task => {
+                    const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.backlog;
+                    const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
+                    return (
+                      <div key={task.id} className="bg-white rounded-lg border border-gray-200 p-3 active:bg-gray-50 transition"
+                           onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${sc.bg} ${sc.color}`}>{sc.icon} {sc.label}</span>
+                              <PriorityBadge priority={task.priority} />
+                            </div>
+                            <div className="text-sm font-medium text-gray-900">{task.title}</div>
+                            {task.description && <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{task.description}</div>}
+                            <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500">
+                              {task.assigned_member?.name && <span>👤 {task.assigned_member.name}</span>}
+                              {task.due_date && <span className={isOverdue ? 'text-red-500 font-medium' : ''}>{isOverdue ? '⚠️ ' : '📅 '}{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                            </div>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="p-1 text-gray-400 hover:text-red-500 transition shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )
+          )}
+
+          {/* KANBAN VIEW */}
+          {taskViewMode === 'kanban' && (
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
+              {taskStatuses.map(status => {
+                const sc = STATUS_CONFIG[status];
+                return (
+                  <div key={status} className="bg-gray-50 rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] sm:text-xs font-semibold text-gray-500 uppercase">{sc?.icon} {sc?.label || status}</span>
+                      <span className="text-[10px] sm:text-xs text-gray-400 bg-gray-200 px-1.5 py-0.5 rounded-full">{tasksByStatus[status]?.length || 0}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {(tasksByStatus[status] || []).map(task => (
+                        <div key={task.id} className="bg-white rounded-lg p-2.5 sm:p-3 border border-gray-200 hover:border-purple-300 transition cursor-pointer group"
+                             onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                          <div className="flex items-start justify-between">
+                            <span className="text-xs sm:text-sm text-gray-900 font-medium leading-tight">{task.title}</span>
+                            <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 text-gray-400 transition"><Trash2 size={12} /></button>
+                          </div>
+                          {task.description && <p className="text-[10px] sm:text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</p>}
+                          <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
+                            <PriorityBadge priority={task.priority} />
+                            {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                            {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-500">→ {task.assigned_member.name}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -387,7 +740,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
           <FormField label="Description" name="description" type="textarea" value={taskForm.description} onChange={e => setTaskForm(f => ({ ...f, description: e.target.value }))} placeholder="Detailed task brief, requirements, reference links..." rows={3} />
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Priority" name="priority" value={taskForm.priority} onChange={e => setTaskForm(f => ({ ...f, priority: e.target.value }))} options={[{ value: 'urgent', label: '🔴 Urgent' }, { value: 'high', label: '🟠 High' }, { value: 'medium', label: '🟡 Medium' }, { value: 'low', label: '⚪ Low' }]} />
-            <FormField label="Status" name="status" value={taskForm.status} onChange={e => setTaskForm(f => ({ ...f, status: e.target.value }))} options={[{ value: 'backlog', label: 'Backlog' }, { value: 'todo', label: 'To Do' }, { value: 'in_progress', label: 'In Progress' }, { value: 'review', label: 'Review' }, { value: 'done', label: 'Done' }]} />
+            <FormField label="Status" name="status" value={taskForm.status} onChange={e => setTaskForm(f => ({ ...f, status: e.target.value }))} options={[{ value: 'backlog', label: '📋 Backlog' }, { value: 'todo', label: '📌 To Do' }, { value: 'in_progress', label: '🔄 In Progress' }, { value: 'review', label: '👀 Review' }, { value: 'done', label: '✅ Done' }]} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <FormField label="Due Date" name="due_date" type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} />
@@ -398,6 +751,38 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             <button onClick={saveTask} disabled={!taskForm.title} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition">
               {editTask ? 'Update' : 'Create'} Task
             </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Extract Tasks Modal */}
+      <Modal open={showExtractModal} onClose={() => setShowExtractModal(false)} title="Extract Tasks from Meeting Notes" size="lg">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">Found {extractedTasks.length} potential action items. Select which ones to create as tasks:</p>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {extractedTasks.map((t, i) => (
+              <label key={i} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${t.selected ? 'bg-purple-50 border-purple-300' : 'bg-gray-50 border-gray-200'}`}>
+                <input type="checkbox" checked={t.selected} onChange={() => setExtractedTasks(prev => prev.map((x, j) => j === i ? { ...x, selected: !x.selected } : x))}
+                  className="mt-0.5 rounded border-gray-300 text-purple-600 focus:ring-purple-500" />
+                <span className="text-sm text-gray-900">{t.title}</span>
+              </label>
+            ))}
+          </div>
+          {extractedTasks.length === 0 && (
+            <div className="text-center py-6">
+              <p className="text-sm text-gray-500">No action items found. Try using checklist items or phrases like &quot;Follow up&quot;, &quot;Send&quot;, &quot;Prepare&quot; in your notes.</p>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-2">
+            <button onClick={() => { setExtractedTasks(prev => prev.map(t => ({ ...t, selected: !prev.every(x => x.selected) }))); }} className="text-xs text-purple-600 hover:text-purple-800 transition">
+              {extractedTasks.every(t => t.selected) ? 'Deselect All' : 'Select All'}
+            </button>
+            <div className="flex gap-3">
+              <button onClick={() => setShowExtractModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900">Cancel</button>
+              <button onClick={createExtractedTasks} disabled={!extractedTasks.some(t => t.selected)} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
+                <ListTodo size={14} /> Create {extractedTasks.filter(t => t.selected).length} Tasks
+              </button>
+            </div>
           </div>
         </div>
       </Modal>
@@ -426,10 +811,10 @@ function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; 
         {stats.map((s, i) => {
           const isGood = s.target === null ? true : s.label.includes('Overdue') ? s.value === 0 : s.value >= s.target;
           return (
-            <div key={i} className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
+            <div key={i} className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200">
               <div className="flex items-center gap-2 text-gray-500 text-xs sm:text-sm mb-2"><s.icon size={16} />{s.label}</div>
               <div className="flex items-baseline gap-2">
-                <span className={`text-2xl sm:text-3xl font-bold ${isGood ? 'text-green-400' : 'text-red-400'}`}>{s.value}</span>
+                <span className={`text-2xl sm:text-3xl font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>{s.value}</span>
                 {s.target !== null && <span className="text-xs sm:text-sm text-gray-500">/ {s.target} target</span>}
               </div>
             </div>
@@ -437,13 +822,13 @@ function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; 
         })}
       </div>
       {overdueTasks.length > 0 && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 sm:p-4">
-          <h3 className="text-xs sm:text-sm font-semibold text-red-400 mb-2">⚠️ Overdue Tasks</h3>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+          <h3 className="text-xs sm:text-sm font-semibold text-red-600 mb-2">⚠️ Overdue Tasks</h3>
           <div className="space-y-1">
             {overdueTasks.map(t => (
               <div key={t.id} className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="text-gray-600">{t.title}</span>
-                <span className="text-red-400 text-xs">Due {new Date(t.due_date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                <span className="text-gray-700">{t.title}</span>
+                <span className="text-red-500 text-xs">Due {new Date(t.due_date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
               </div>
             ))}
           </div>
