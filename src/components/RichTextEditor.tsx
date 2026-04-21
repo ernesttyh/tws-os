@@ -64,7 +64,7 @@ export default function RichTextEditor({ content, onChange, placeholder = 'Start
       type="button"
       onClick={(e) => { e.preventDefault(); onClick(); }}
       title={title}
-      className={`p-1 sm:p-1.5 rounded transition shrink-0 ${active ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/10'}`}
+      className={`p-1 sm:p-1.5 rounded transition shrink-0 ${active ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'}`}
     >
       <Icon size={15} />
     </button>
@@ -79,27 +79,27 @@ export default function RichTextEditor({ content, onChange, placeholder = 'Start
   };
 
   return (
-    <div className={`bg-[#0d0d1a] border border-white/10 rounded-lg overflow-hidden ${className}`}>
+    <div className={`bg-white border border-gray-200 rounded-lg overflow-hidden ${className}`}>
       {editable && (
-        <div className="flex items-center gap-0.5 px-1.5 sm:px-2 py-1 sm:py-1.5 border-b border-white/10 bg-white/[0.03] overflow-x-auto scrollbar-hide">
+        <div className="flex items-center gap-0.5 px-1.5 sm:px-2 py-1 sm:py-1.5 border-b border-gray-200 bg-gray-50 overflow-x-auto scrollbar-hide">
           <ToolBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} icon={Bold} title="Bold (Ctrl+B)" />
           <ToolBtn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} icon={Italic} title="Italic (Ctrl+I)" />
           <ToolBtn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} icon={UnderlineIcon} title="Underline (Ctrl+U)" />
           <ToolBtn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} icon={Strikethrough} title="Strikethrough" />
 
-          <div className="w-px h-4 bg-white/10 mx-0.5 sm:mx-1 shrink-0" />
+          <div className="w-px h-4 bg-gray-300 mx-0.5 sm:mx-1 shrink-0" />
 
           <ToolBtn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} icon={Heading1} title="Heading 1" />
           <ToolBtn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} icon={Heading2} title="Heading 2" />
           <ToolBtn onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} icon={Heading3} title="Heading 3" />
 
-          <div className="w-px h-4 bg-white/10 mx-0.5 sm:mx-1 shrink-0" />
+          <div className="w-px h-4 bg-gray-300 mx-0.5 sm:mx-1 shrink-0" />
 
           <ToolBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} icon={List} title="Bullet List" />
           <ToolBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} icon={ListOrdered} title="Numbered List" />
           <ToolBtn onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} icon={CheckSquare} title="Checklist" />
 
-          <div className="w-px h-4 bg-white/10 mx-0.5 sm:mx-1 shrink-0" />
+          <div className="w-px h-4 bg-gray-300 mx-0.5 sm:mx-1 shrink-0" />
 
           <ToolBtn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} icon={Quote} title="Quote" />
           <ToolBtn onClick={() => editor.chain().focus().toggleCodeBlock().run()} active={editor.isActive('codeBlock')} icon={Code} title="Code Block" />

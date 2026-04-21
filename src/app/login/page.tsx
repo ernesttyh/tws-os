@@ -35,11 +35,11 @@ export default function LoginPage() {
           <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center text-white font-bold text-xl sm:text-2xl mx-auto mb-3 sm:mb-4">
             TWS
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">TWS OS</h1>
-          <p className="text-gray-400 mt-1 sm:mt-2 text-sm sm:text-base">Marketing Command Center</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">TWS OS</h1>
+          <p className="text-gray-500 mt-1 sm:mt-2 text-sm sm:text-base">Marketing Command Center</p>
         </div>
 
-        <form onSubmit={handleLogin} className="bg-[#16162a] rounded-xl sm:rounded-2xl p-5 sm:p-8 border border-white/10 space-y-4 sm:space-y-5">
+        <form onSubmit={handleLogin} className="bg-white rounded-xl sm:rounded-2xl p-5 sm:p-8 border border-gray-200 space-y-4 sm:space-y-5">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
               <p className="text-red-400 text-xs sm:text-sm">{error}</p>
@@ -47,12 +47,12 @@ export default function LoginPage() {
           )}
 
           <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1.5">Email</label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-600 mb-1.5">Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full" placeholder="you@twsbranding.com" required autoComplete="email" />
           </div>
 
           <div>
-            <label className="block text-xs sm:text-sm font-medium text-gray-300 mb-1.5">Password</label>
+            <label className="block text-xs sm:text-sm font-medium text-gray-600 mb-1.5">Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full" placeholder="Enter password" required autoComplete="current-password" />
           </div>
 

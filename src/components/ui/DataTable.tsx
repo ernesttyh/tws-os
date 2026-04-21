@@ -19,9 +19,9 @@ export default function DataTable<T extends Record<string, unknown>>({ columns, 
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-white/10">
+          <tr className="border-b border-gray-200">
             {columns.map(col => (
-              <th key={col.key} className={`text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider ${col.className || ''}`}>
+              <th key={col.key} className={`text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider ${col.className || ''}`}>
                 {col.label}
               </th>
             ))}
@@ -30,9 +30,9 @@ export default function DataTable<T extends Record<string, unknown>>({ columns, 
         <tbody>
           {data.map((item) => (
             <tr key={String(item[keyField])} onClick={() => onRowClick?.(item)}
-                className={`border-b border-white/5 ${onRowClick ? 'cursor-pointer hover:bg-white/5' : ''} transition`}>
+                className={`border-b border-gray-200 ${onRowClick ? 'cursor-pointer hover:bg-gray-50' : ''} transition`}>
               {columns.map(col => (
-                <td key={col.key} className={`py-3 px-4 text-gray-300 ${col.className || ''}`}>
+                <td key={col.key} className={`py-3 px-4 text-gray-600 ${col.className || ''}`}>
                   {col.render ? col.render(item) : String(item[col.key] ?? '-')}
                 </td>
               ))}

@@ -1,13 +1,13 @@
 const statusColors: Record<string, string> = {
   // Task statuses
-  backlog: 'bg-gray-500/20 text-gray-400',
+  backlog: 'bg-gray-100 text-gray-500',
   todo: 'bg-blue-500/20 text-blue-400',
   in_progress: 'bg-yellow-500/20 text-yellow-400',
   review: 'bg-purple-500/20 text-purple-400',
   done: 'bg-green-500/20 text-green-400',
-  archived: 'bg-gray-500/20 text-gray-500',
+  archived: 'bg-gray-100 text-gray-500',
   // Content statuses
-  idea: 'bg-gray-500/20 text-gray-400',
+  idea: 'bg-gray-100 text-gray-500',
   planned: 'bg-blue-500/20 text-blue-400',
   approved: 'bg-green-500/20 text-green-400',
   scheduled: 'bg-cyan-500/20 text-cyan-400',
@@ -28,9 +28,9 @@ const statusColors: Record<string, string> = {
   active: 'bg-green-500/20 text-green-400',
   paused: 'bg-yellow-500/20 text-yellow-400',
   completed: 'bg-emerald-500/20 text-emerald-400',
-  draft: 'bg-gray-500/20 text-gray-400',
+  draft: 'bg-gray-100 text-gray-500',
   // Influencer statuses
-  prospecting: 'bg-gray-500/20 text-gray-400',
+  prospecting: 'bg-gray-100 text-gray-500',
   contacted: 'bg-blue-500/20 text-blue-400',
   negotiating: 'bg-yellow-500/20 text-yellow-400',
   confirmed: 'bg-green-500/20 text-green-400',
@@ -40,7 +40,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function StatusBadge({ status }: { status: string }) {
-  const color = statusColors[status] || 'bg-gray-500/20 text-gray-400';
+  const color = statusColors[status] || 'bg-gray-100 text-gray-500';
   const label = status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${color}`}>{label}</span>;
 }

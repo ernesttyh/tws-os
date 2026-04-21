@@ -10,7 +10,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import { ClipboardList, Plus, FileText, CheckSquare, BarChart3, Calendar, Trash2, Edit2, ChevronDown, ChevronRight, ArrowLeft, Save, Clock, Building2, Search, X } from 'lucide-react';
 
 // Lazy-load TipTap editor (big bundle, no SSR)
-const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), { ssr: false, loading: () => <div className="h-64 bg-white/5 rounded-lg animate-pulse" /> });
+const RichTextEditor = dynamic(() => import('@/components/RichTextEditor'), { ssr: false, loading: () => <div className="h-64 bg-gray-50 rounded-lg animate-pulse" /> });
 
 type Tab = 'meetings' | 'tasks' | 'cadence';
 type MeetingView = 'brand' | 'group';
@@ -170,18 +170,18 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     { key: 'cadence', label: 'Cadence Tracker', shortLabel: 'Cadence', icon: BarChart3, count: 0 },
   ];
 
-  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-white/5 rounded w-48" /><div className="h-64 bg-white/5 rounded" /></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-gray-50 rounded w-48" /><div className="h-64 bg-gray-50 rounded" /></div></div>;
 
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Sub-tabs */}
-      <div className="flex gap-1 bg-white/5 rounded-lg p-1 overflow-x-auto scrollbar-hide">
+      <div className="flex gap-1 bg-gray-50 rounded-lg p-1 overflow-x-auto scrollbar-hide">
         {tabs.map(t => (
-          <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'meetings') { setSelectedMeeting(null); setIsNewMeeting(false); } }} className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${tab === t.key ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}>
+          <button key={t.key} onClick={() => { setTab(t.key); if (t.key === 'meetings') { setSelectedMeeting(null); setIsNewMeeting(false); } }} className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium transition whitespace-nowrap ${tab === t.key ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'}`}>
             <t.icon size={14} className="shrink-0" />
             <span className="sm:hidden">{t.shortLabel}</span>
             <span className="hidden sm:inline">{t.label}</span>
-            {t.count > 0 && <span className="ml-0.5 sm:ml-1 px-1.5 py-0.5 text-[10px] sm:text-xs rounded-full bg-white/10">{t.count}</span>}
+            {t.count > 0 && <span className="ml-0.5 sm:ml-1 px-1.5 py-0.5 text-[10px] sm:text-xs rounded-full bg-gray-100">{t.count}</span>}
           </button>
         ))}
       </div>
@@ -192,13 +192,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
           {/* Header with view toggle */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <h2 className="text-base sm:text-lg font-semibold text-white">Meeting Notes</h2>
+              <h2 className="text-base sm:text-lg font-semibold text-gray-900">Meeting Notes</h2>
               {/* Brand / Group toggle */}
-              <div className="flex bg-white/5 rounded-lg p-0.5 text-xs">
-                <button onClick={() => setMeetingView('brand')} className={`px-2.5 py-1 rounded-md transition ${meetingView === 'brand' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+              <div className="flex bg-gray-50 rounded-lg p-0.5 text-xs">
+                <button onClick={() => setMeetingView('brand')} className={`px-2.5 py-1 rounded-md transition ${meetingView === 'brand' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
                   Brand
                 </button>
-                <button onClick={() => { setMeetingView('group'); if (brand) loadGroupMeetings(brand); }} className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${meetingView === 'group' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                <button onClick={() => { setMeetingView('group'); if (brand) loadGroupMeetings(brand); }} className={`px-2.5 py-1 rounded-md transition flex items-center gap-1 ${meetingView === 'group' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-900'}`}>
                   <Building2 size={11} />{groupLabel}
                 </button>
               </div>
@@ -208,8 +208,8 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
               <div className="relative flex-1 sm:flex-initial">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
                 <input type="text" placeholder="Search notes..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-8 pr-8 py-1.5 text-xs bg-white/5 border border-white/10 rounded-lg w-full sm:w-48 focus:w-64 transition-all" />
-                {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"><X size={12} /></button>}
+                  className="pl-8 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg w-full sm:w-48 focus:w-64 transition-all" />
+                {searchQuery && <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-900"><X size={12} /></button>}
               </div>
               <button onClick={() => { setIsNewMeeting(true); setNewTitle(''); setNewDate(new Date().toISOString().split('T')[0]); setNewType('workplan'); setNewSource('manual'); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
                 <Plus size={14} /><span className="hidden sm:inline">New Note</span><span className="sm:hidden">New</span>
@@ -226,14 +226,14 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                 const plainText = m.content?.replace(/<[^>]*>/g, '').trim() || '';
                 const preview = plainText.slice(0, 120) + (plainText.length > 120 ? '...' : '');
                 return (
-                  <div key={m.id} onClick={() => setSelectedMeeting(m)} className="bg-white/5 rounded-lg border border-white/10 hover:border-purple-500/40 p-3 sm:p-4 cursor-pointer transition group">
+                  <div key={m.id} onClick={() => setSelectedMeeting(m)} className="bg-gray-50 rounded-lg border border-gray-200 hover:border-purple-500/40 p-3 sm:p-4 cursor-pointer transition group">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-1">
                           {meetingView === 'group' && m.brand?.name && (
                             <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-purple-500/20 text-purple-300">{m.brand.name}</span>
                           )}
-                          <span className="text-sm text-white font-medium truncate">{m.title}</span>
+                          <span className="text-sm text-gray-900 font-medium truncate">{m.title}</span>
                           <StatusBadge status={m.meeting_type} />
                         </div>
                         <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500">
@@ -241,9 +241,9 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                           {m.creator?.name && <span>• {m.creator.name}</span>}
                           <span className="badge-neutral badge text-[9px]">{m.source}</span>
                         </div>
-                        {preview && <p className="text-xs text-gray-400 mt-1.5 line-clamp-2">{preview}</p>}
+                        {preview && <p className="text-xs text-gray-500 mt-1.5 line-clamp-2">{preview}</p>}
                       </div>
-                      <button onClick={(e) => { e.stopPropagation(); deleteMeeting(m.id); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-white/10 text-gray-500 hover:text-red-400 transition shrink-0">
+                      <button onClick={(e) => { e.stopPropagation(); deleteMeeting(m.id); }} className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-red-400 transition shrink-0">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -259,12 +259,12 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       {tab === 'meetings' && isNewMeeting && !selectedMeeting && (
         <div className="space-y-4 animate-fade-in">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsNewMeeting(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition">
+            <button onClick={() => setIsNewMeeting(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition">
               <ArrowLeft size={18} />
             </button>
-            <h2 className="text-base sm:text-lg font-semibold text-white">New Meeting Note</h2>
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900">New Meeting Note</h2>
           </div>
-          <div className="bg-white/5 rounded-xl border border-white/10 p-4 sm:p-6 space-y-4">
+          <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 sm:p-6 space-y-4">
             <FormField label="Title" name="title" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. April Workplan Meeting — Korea Culture" required />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="Date" name="meeting_date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
@@ -272,7 +272,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
               <FormField label="Source" name="source" value={newSource} onChange={e => setNewSource(e.target.value)} options={[{ value: 'manual', label: '✍️ Manual' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }]} />
             </div>
             <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setIsNewMeeting(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition">Cancel</button>
+              <button onClick={() => setIsNewMeeting(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition">Cancel</button>
               <button onClick={createMeeting} disabled={!newTitle.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
                 <FileText size={14} /> Create & Start Writing
               </button>
@@ -287,13 +287,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
           {/* Editor header */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <button onClick={() => { setSelectedMeeting(null); if (brand) { loadData(brand); loadGroupMeetings(brand); } }} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition shrink-0">
+              <button onClick={() => { setSelectedMeeting(null); if (brand) { loadData(brand); loadGroupMeetings(brand); } }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition shrink-0">
                 <ArrowLeft size={18} />
               </button>
               <div className="min-w-0">
                 <input type="text" value={selectedMeeting.title} onChange={e => { const val = e.target.value; setSelectedMeeting(prev => prev ? { ...prev, title: val } : prev); }}
                   onBlur={() => updateMeetingMeta(selectedMeeting.id, { title: selectedMeeting.title })}
-                  className="text-base sm:text-lg font-semibold text-white bg-transparent border-none outline-none w-full truncate p-0 focus:ring-0"
+                  className="text-base sm:text-lg font-semibold text-gray-900 bg-transparent border-none outline-none w-full truncate p-0 focus:ring-0"
                   style={{ boxShadow: 'none', minHeight: 'auto' }} />
                 <div className="flex items-center gap-2 text-[10px] sm:text-xs text-gray-500 mt-0.5">
                   <span>{new Date(selectedMeeting.meeting_date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
@@ -308,13 +308,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
               {saveStatus === 'saved' && <span className="text-xs text-green-400 flex items-center gap-1"><Save size={12} /> Saved</span>}
               {/* Metadata edit */}
               <select value={selectedMeeting.meeting_type} onChange={e => { const val = e.target.value; setSelectedMeeting(prev => prev ? { ...prev, meeting_type: val } : prev); updateMeetingMeta(selectedMeeting.id, { meeting_type: val }); }}
-                className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1">
+                className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-2 py-1">
                 <option value="workplan">📋 Workplan</option>
                 <option value="review">🔍 Review</option>
                 <option value="brainstorm">💡 Brainstorm</option>
                 <option value="adhoc">⚡ Ad-hoc</option>
               </select>
-              <button onClick={() => deleteMeeting(selectedMeeting.id)} className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition">
+              <button onClick={() => deleteMeeting(selectedMeeting.id)} className="p-1.5 rounded-lg hover:bg-red-500/20 text-gray-500 hover:text-red-400 transition">
                 <Trash2 size={16} />
               </button>
             </div>
@@ -330,8 +330,8 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
 
           {/* Transcript section (if available) */}
           {selectedMeeting.transcript_raw && (
-            <details className="bg-white/5 rounded-lg border border-white/10 p-3 sm:p-4">
-              <summary className="text-xs sm:text-sm text-gray-400 cursor-pointer hover:text-gray-300 font-medium">📝 Raw Transcript</summary>
+            <details className="bg-gray-50 rounded-lg border border-gray-200 p-3 sm:p-4">
+              <summary className="text-xs sm:text-sm text-gray-500 cursor-pointer hover:text-gray-600 font-medium">📝 Raw Transcript</summary>
               <pre className="mt-3 text-xs text-gray-500 whitespace-pre-wrap bg-black/20 rounded p-3 max-h-48 overflow-y-auto">{selectedMeeting.transcript_raw}</pre>
             </details>
           )}
@@ -342,31 +342,31 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       {tab === 'tasks' && (
         <div className="space-y-3 sm:space-y-4">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base sm:text-lg font-semibold text-white">Task Board</h2>
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900">Task Board</h2>
             <button onClick={() => { resetTaskForm(); setEditTask(null); setShowTaskModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg transition shrink-0">
               <Plus size={14} /><span className="hidden sm:inline">New Task</span><span className="sm:hidden">New</span>
             </button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-5">
             {taskStatuses.map(status => (
-              <div key={status} className="bg-white/5 rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
+              <div key={status} className="bg-gray-50 rounded-lg p-3 min-h-[200px] min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{status.replace('_', ' ')}</span>
+                  <span className="text-[10px] sm:text-xs font-semibold text-gray-500 uppercase">{status.replace('_', ' ')}</span>
                   <span className="text-[10px] sm:text-xs text-gray-500">{tasksByStatus[status]?.length || 0}</span>
                 </div>
                 <div className="space-y-2">
                   {(tasksByStatus[status] || []).map(task => (
-                    <div key={task.id} className="bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-pointer group"
+                    <div key={task.id} className="bg-white rounded-lg p-2.5 sm:p-3 border border-gray-200 hover:border-gray-300 transition cursor-pointer group"
                          onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
                       <div className="flex items-start justify-between">
-                        <span className="text-xs sm:text-sm text-white font-medium leading-tight">{task.title}</span>
+                        <span className="text-xs sm:text-sm text-gray-900 font-medium leading-tight">{task.title}</span>
                         <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400 text-gray-500 transition"><Trash2 size={12} /></button>
                       </div>
-                      {task.description && <p className="text-[10px] sm:text-xs text-gray-400 mt-1 line-clamp-2">{task.description}</p>}
+                      {task.description && <p className="text-[10px] sm:text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</p>}
                       <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
                         <PriorityBadge priority={task.priority} />
                         {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-400">→ {task.assigned_member.name}</span>}
+                        {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-500">→ {task.assigned_member.name}</span>}
                       </div>
                     </div>
                   ))}
@@ -394,7 +394,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             <FormField label="Assign To" name="assigned_to" value={taskForm.assigned_to} onChange={e => setTaskForm(f => ({ ...f, assigned_to: e.target.value }))} options={teamMembers.map(m => ({ value: m.id, label: m.name }))} />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => { setShowTaskModal(false); setEditTask(null); }} className="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancel</button>
+            <button onClick={() => { setShowTaskModal(false); setEditTask(null); }} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900">Cancel</button>
             <button onClick={saveTask} disabled={!taskForm.title} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition">
               {editTask ? 'Update' : 'Create'} Task
             </button>
@@ -421,13 +421,13 @@ function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; 
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      <h2 className="text-base sm:text-lg font-semibold text-white">Cadence Tracker — {thisMonth}</h2>
+      <h2 className="text-base sm:text-lg font-semibold text-gray-900">Cadence Tracker — {thisMonth}</h2>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {stats.map((s, i) => {
           const isGood = s.target === null ? true : s.label.includes('Overdue') ? s.value === 0 : s.value >= s.target;
           return (
-            <div key={i} className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
-              <div className="flex items-center gap-2 text-gray-400 text-xs sm:text-sm mb-2"><s.icon size={16} />{s.label}</div>
+            <div key={i} className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
+              <div className="flex items-center gap-2 text-gray-500 text-xs sm:text-sm mb-2"><s.icon size={16} />{s.label}</div>
               <div className="flex items-baseline gap-2">
                 <span className={`text-2xl sm:text-3xl font-bold ${isGood ? 'text-green-400' : 'text-red-400'}`}>{s.value}</span>
                 {s.target !== null && <span className="text-xs sm:text-sm text-gray-500">/ {s.target} target</span>}
@@ -442,7 +442,7 @@ function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; 
           <div className="space-y-1">
             {overdueTasks.map(t => (
               <div key={t.id} className="flex items-center justify-between text-xs sm:text-sm">
-                <span className="text-gray-300">{t.title}</span>
+                <span className="text-gray-600">{t.title}</span>
                 <span className="text-red-400 text-xs">Due {new Date(t.due_date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
               </div>
             ))}

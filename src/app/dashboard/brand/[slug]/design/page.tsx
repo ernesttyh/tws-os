@@ -44,14 +44,14 @@ export default function DesignPage({ params }: { params: Promise<{ slug: string 
   // Group by status for pipeline view
   const pipeline = DESIGN_STATUSES.map(s => ({ ...s, items: briefs.filter(b => b.status === s.value) }));
 
-  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-gray-50 rounded" /></div></div>;
 
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-base sm:text-lg font-semibold text-white">Design Pipeline</h2>
-          <p className="text-xs sm:text-sm text-gray-400">{briefs.length} briefs · {briefs.filter(b => b.status === 'approved').length} approved</p>
+          <h2 className="text-base sm:text-lg font-semibold text-gray-900">Design Pipeline</h2>
+          <p className="text-xs sm:text-sm text-gray-500">{briefs.length} briefs · {briefs.filter(b => b.status === 'approved').length} approved</p>
         </div>
         <button onClick={() => { resetForm(); setEditBrief(null); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg shrink-0"><Plus size={14} /><span className="hidden sm:inline">New Brief</span><span className="sm:hidden">New</span></button>
       </div>
@@ -61,22 +61,22 @@ export default function DesignPage({ params }: { params: Promise<{ slug: string 
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-3 lg:grid-cols-6">
           {pipeline.map(stage => (
-            <div key={stage.value} className="bg-white/5 rounded-lg p-2.5 sm:p-3 min-h-[180px] sm:min-h-[200px] min-w-[200px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
+            <div key={stage.value} className="bg-gray-50 rounded-lg p-2.5 sm:p-3 min-h-[180px] sm:min-h-[200px] min-w-[200px] sm:min-w-0 flex-shrink-0 sm:flex-shrink">
               <div className="flex items-center justify-between mb-2 sm:mb-3">
-                <span className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase">{stage.label}</span>
+                <span className="text-[10px] sm:text-xs font-semibold text-gray-500 uppercase">{stage.label}</span>
                 <span className="text-[10px] sm:text-xs text-gray-500">{stage.items.length}</span>
               </div>
               <div className="space-y-2">
                 {stage.items.map(b => (
-                  <div key={b.id} className="bg-[#1a1a2e] rounded-lg p-2.5 sm:p-3 border border-white/5 hover:border-white/20 transition cursor-pointer group"
+                  <div key={b.id} className="bg-white rounded-lg p-2.5 sm:p-3 border border-gray-200 hover:border-gray-300 transition cursor-pointer group"
                        onClick={() => { setEditBrief(b); setForm({ title: b.title, description: b.description || '', dimensions: b.dimensions || '', status: b.status, deadline: b.deadline || '', assigned_to: b.assignee?.id || '', drive_folder_url: b.drive_folder_url || '', revision_notes: b.revision_notes || '' }); setShowModal(true); }}>
                     <div className="flex items-start justify-between">
-                      <span className="text-xs sm:text-sm text-white font-medium leading-tight">{b.title}</span>
+                      <span className="text-xs sm:text-sm text-gray-900 font-medium leading-tight">{b.title}</span>
                       <button onClick={e => { e.stopPropagation(); deleteBrief(b.id); }} className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-500 hover:text-red-400"><Trash2 size={12} /></button>
                     </div>
                     {b.dimensions && <p className="text-[10px] sm:text-xs text-gray-500 mt-1">📐 {b.dimensions}</p>}
                     <div className="flex items-center gap-1.5 sm:gap-2 mt-1.5 sm:mt-2">
-                      {b.assignee && <span className="text-[10px] sm:text-xs text-gray-400">→ {b.assignee.name}</span>}
+                      {b.assignee && <span className="text-[10px] sm:text-xs text-gray-500">→ {b.assignee.name}</span>}
                       {b.deadline && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(b.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                     </div>
                     {b.revision_count > 0 && <span className="text-[10px] sm:text-xs text-orange-400 mt-1">Rev {b.revision_count}</span>}
@@ -106,7 +106,7 @@ export default function DesignPage({ params }: { params: Promise<{ slug: string 
           </div>
           {editBrief && <FormField label="Revision Notes" name="revision_notes" type="textarea" value={form.revision_notes} onChange={e => setForm(f => ({ ...f, revision_notes: e.target.value }))} rows={2} />}
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => { setShowModal(false); setEditBrief(null); }} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
+            <button onClick={() => { setShowModal(false); setEditBrief(null); }} className="px-4 py-2 text-sm text-gray-500">Cancel</button>
             <button onClick={save} disabled={!form.title} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">{editBrief ? 'Update' : 'Create'}</button>
           </div>
         </div>

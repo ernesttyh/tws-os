@@ -7,7 +7,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import { BarChart3, Plus, TrendingUp, DollarSign, Eye, MousePointer } from 'lucide-react';
 
-interface Campaign { id: string; campaign_name: string; platform: string; status: string; objective: string | null; budget_daily: number | null; budget_total: number | null; start_date: string | null; end_date: string | null; notes: string | null; impressions: number | null; reach: number | null; clicks: number | null; spend: number | null; ctr: number | null; cpc: number | null; cpm: number | null }
+interface Campaign { id: string; campaign_name: string; platform: string; status: string; objective: string | null; budget_daily: number | null; budget_total: number | null; start_date: string | null; end_date: string | null; notes: string | null }
 interface Metric { campaign_id: string; date: string; spend: number | null; impressions: number | null; clicks: number | null; ctr: number | null; cpc: number | null; reach: number | null; conversions: number | null; roas: number | null }
 
 const PLATFORMS = [{ value: 'facebook', label: '📘 Meta' }, { value: 'instagram', label: '📸 IG' }, { value: 'google', label: '🔍 Google' }, { value: 'tiktok', label: '🎵 TikTok' }];
@@ -37,16 +37,16 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
     setShowModal(false); resetForm(); loadData(brandId);
   };
 
-  // Aggregate metrics from campaigns (data is on campaign columns, not ad_daily_metrics)
-  const totalSpend = campaigns.reduce((s, c) => s + (c.spend || 0), 0);
-  const totalImpressions = campaigns.reduce((s, c) => s + (c.impressions || 0), 0);
-  const totalClicks = campaigns.reduce((s, c) => s + (c.clicks || 0), 0);
+  // Aggregate metrics
+  const totalSpend = metrics.reduce((s, m) => s + (m.spend || 0), 0);
+  const totalImpressions = metrics.reduce((s, m) => s + (m.impressions || 0), 0);
+  const totalClicks = metrics.reduce((s, m) => s + (m.clicks || 0), 0);
   const avgCTR = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
 
   const filtered = filter === 'all' ? campaigns : campaigns.filter(c => c.platform === filter);
   const activeCampaigns = campaigns.filter(c => c.status === 'active');
 
-  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
+  if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-gray-50 rounded" /></div></div>;
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -58,8 +58,8 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
           { label: 'Clicks', value: totalClicks.toLocaleString(), icon: MousePointer, color: 'text-purple-400' },
           { label: 'Avg CTR', value: `${avgCTR.toFixed(2)}%`, icon: TrendingUp, color: 'text-yellow-400' },
         ].map((s, i) => (
-          <div key={i} className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-gray-400 text-[10px] sm:text-xs mb-1"><s.icon size={14} />{s.label}</div>
+          <div key={i} className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-gray-500 text-[10px] sm:text-xs mb-1"><s.icon size={14} />{s.label}</div>
             <span className={`text-xl sm:text-2xl font-bold ${s.color}`}>{s.value}</span>
           </div>
         ))}
@@ -67,9 +67,9 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide pb-1 sm:pb-0">
-          <button onClick={() => setFilter('all')} className={`px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === 'all' ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400'}`}>All</button>
+          <button onClick={() => setFilter('all')} className={`px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === 'all' ? 'bg-purple-600 text-white' : 'bg-gray-50 text-gray-500'}`}>All</button>
           {PLATFORMS.map(p => (
-            <button key={p.value} onClick={() => setFilter(p.value)} className={`px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === p.value ? 'bg-purple-600 text-white' : 'bg-white/5 text-gray-400'}`}>{p.label}</button>
+            <button key={p.value} onClick={() => setFilter(p.value)} className={`px-2.5 sm:px-3 py-1 text-[10px] sm:text-xs rounded-full transition whitespace-nowrap ${filter === p.value ? 'bg-purple-600 text-white' : 'bg-gray-50 text-gray-500'}`}>{p.label}</button>
           ))}
         </div>
         <button onClick={() => { resetForm(); setShowModal(true); }} className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs sm:text-sm rounded-lg shrink-0 self-end sm:self-auto"><Plus size={14} /><span className="hidden sm:inline">Add Campaign</span><span className="sm:hidden">Add</span></button>
@@ -82,8 +82,8 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
           <div className="space-y-2">
             {activeCampaigns.map(c => (
               <div key={c.id} className="flex flex-col sm:flex-row sm:items-center justify-between text-xs sm:text-sm gap-1">
-                <div className="flex items-center gap-2"><span className="text-white">{c.campaign_name}</span><StatusBadge status={c.platform} /></div>
-                <div className="text-gray-400 text-[10px] sm:text-xs">{c.budget_daily ? `$${c.budget_daily}/day` : ''} {c.budget_total ? `(Total: $${c.budget_total})` : ''}</div>
+                <div className="flex items-center gap-2"><span className="text-gray-900">{c.campaign_name}</span><StatusBadge status={c.platform} /></div>
+                <div className="text-gray-500 text-[10px] sm:text-xs">{c.budget_daily ? `$${c.budget_daily}/day` : ''} {c.budget_total ? `(Total: $${c.budget_total})` : ''}</div>
               </div>
             ))}
           </div>
@@ -95,30 +95,27 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
       ) : (
         <div className="space-y-3">
           {filtered.map(c => {
-            const cSpend = c.spend || 0;
-            const cImpr = c.impressions || 0;
-            const cClicks = c.clicks || 0;
-            const cCTR = c.ctr || 0;
-            const cCPC = c.cpc || 0;
+            const cMetrics = metrics.filter(m => m.campaign_id === c.id);
+            const cSpend = cMetrics.reduce((s, m) => s + (m.spend || 0), 0);
+            const cImpr = cMetrics.reduce((s, m) => s + (m.impressions || 0), 0);
+            const cClicks = cMetrics.reduce((s, m) => s + (m.clicks || 0), 0);
             return (
-              <div key={c.id} className="bg-white/5 rounded-lg p-3 sm:p-4 border border-white/10 hover:border-white/20 transition">
+              <div key={c.id} className="bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200 hover:border-gray-300 transition">
                 <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap"><h3 className="text-white font-medium text-sm">{c.campaign_name}</h3><StatusBadge status={c.status} /><StatusBadge status={c.platform} /></div>
-                    {c.objective && <p className="text-[10px] sm:text-xs text-gray-400 mt-1">Objective: {c.objective}</p>}
-                    <div className="flex gap-3 sm:gap-4 mt-2 text-[10px] sm:text-xs text-gray-400 flex-wrap">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap"><h3 className="text-gray-900 font-medium text-sm">{c.campaign_name}</h3><StatusBadge status={c.status} /><StatusBadge status={c.platform} /></div>
+                    {c.objective && <p className="text-[10px] sm:text-xs text-gray-500 mt-1">Objective: {c.objective}</p>}
+                    <div className="flex gap-3 sm:gap-4 mt-2 text-[10px] sm:text-xs text-gray-500 flex-wrap">
                       {c.budget_daily && <span>💰 ${c.budget_daily}/day</span>}
                       {c.budget_total && <span>📊 Total: ${c.budget_total}</span>}
                       {c.start_date && <span>📅 {new Date(c.start_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}{c.end_date ? ` - ${new Date(c.end_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ' - ongoing'}</span>}
                     </div>
                   </div>
-                  {(cSpend > 0 || cImpr > 0) && (
+                  {cMetrics.length > 0 && (
                     <div className="text-left sm:text-right text-[10px] sm:text-xs flex gap-3 sm:block shrink-0">
                       <div className="text-green-400 font-semibold">${cSpend.toFixed(2)} spent</div>
-                      <div className="text-gray-400">{cImpr.toLocaleString()} impr</div>
-                      <div className="text-gray-400">{cClicks.toLocaleString()} clicks</div>
-                      <div className="text-gray-400">CTR: {cCTR.toFixed(2)}%</div>
-                      <div className="text-gray-400">CPC: ${cCPC.toFixed(2)}</div>
+                      <div className="text-gray-500">{cImpr.toLocaleString()} impr</div>
+                      <div className="text-gray-500">{cClicks.toLocaleString()} clicks</div>
                     </div>
                   )}
                 </div>
@@ -146,7 +143,7 @@ export default function AdsPage({ params }: { params: Promise<{ slug: string }> 
           </div>
           <FormField label="Notes" name="notes" type="textarea" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={3} />
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-400">Cancel</button>
+            <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-gray-500">Cancel</button>
             <button onClick={save} disabled={!form.campaign_name} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg">Create Campaign</button>
           </div>
         </div>
