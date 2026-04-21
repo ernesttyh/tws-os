@@ -265,7 +265,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             <h2 className="text-base sm:text-lg font-semibold text-white">New Meeting Note</h2>
           </div>
           <div className="bg-white/5 rounded-xl border border-white/10 p-4 sm:p-6 space-y-4">
-            <FormField label="Title" name="title" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. April Workplan Meeting — Korea Culture" required autoFocus />
+            <FormField label="Title" name="title" value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="e.g. April Workplan Meeting — Korea Culture" required />
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="Date" name="meeting_date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
               <FormField label="Type" name="meeting_type" value={newType} onChange={e => setNewType(e.target.value)} options={[{ value: 'workplan', label: '📋 Workplan' }, { value: 'review', label: '🔍 Review' }, { value: 'brainstorm', label: '💡 Brainstorm' }, { value: 'adhoc', label: '⚡ Ad-hoc' }]} />
