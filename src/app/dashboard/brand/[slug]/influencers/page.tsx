@@ -27,6 +27,10 @@ interface Invitation {
   xhs_posted: boolean;
   l8_posted: boolean;
   post_url: string | null;
+  ig_post_url: string | null;
+  tt_post_url: string | null;
+  xhs_post_url: string | null;
+  l8_post_url: string | null;
   notes: string | null;
   created_at: string;
   influencer: {
@@ -94,29 +98,39 @@ function l8ProfileUrl(handle: string | null): string | null {
   return clean ? `https://lemon8-app.com/${clean}` : null;
 }
 
-// Platform post icon component
-function PlatformPostBadge({ label, emoji, posted, profileUrl, onToggle }: { label: string; emoji: string; posted: boolean; profileUrl: string | null; onToggle: () => void }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      <button
-        onClick={onToggle}
-        title={`Toggle ${label} posted`}
-        className={`w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs transition ${posted ? 'bg-purple-100 text-purple-600 ring-1 ring-purple-300' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+// Platform post icon component — read-only indicator, links to actual post URL (not profile)
+function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { label: string; emoji: string; posted: boolean; postUrl: string | null; profileUrl: string | null }) {
+  if (!posted) {
+    return (
+      <span
+        title={`${label}: not posted`}
+        className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-gray-100 text-gray-400 opacity-40"
       >
         {emoji}
-      </button>
-      {posted && profileUrl && (
-        <a
-          href={profileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`View ${label} profile`}
-          className="w-4 h-4 sm:w-5 sm:h-5 rounded flex items-center justify-center text-purple-500 hover:text-purple-700 hover:bg-purple-50 transition"
-        >
-          <ExternalLink size={10} />
-        </a>
-      )}
-    </div>
+      </span>
+    );
+  }
+  // Posted — link to actual post if URL exists, otherwise show as indicator
+  if (postUrl) {
+    return (
+      <a
+        href={postUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`View ${label} post`}
+        className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-purple-100 text-purple-600 ring-1 ring-purple-300 hover:bg-purple-200 transition cursor-pointer"
+      >
+        {emoji}
+      </a>
+    );
+  }
+  return (
+    <span
+      title={`${label}: posted (no link)`}
+      className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-green-100 text-green-600 ring-1 ring-green-300"
+    >
+      {emoji}
+    </span>
   );
 }
 
@@ -368,7 +382,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             <span>🎵 TikTok</span>
             <span>📕 XHS</span>
             <span>🍋 Lemon8</span>
-            <span className="text-purple-500 ml-1">↗ = view profile</span>
+            <span className="text-purple-500 ml-1">click icon = view post | ↗ = profile</span>
           </div>
 
           {/* Invitations Table */}
@@ -409,7 +423,11 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                             <div className="min-w-0">
                               <span className="text-gray-900 text-xs sm:text-sm font-medium truncate block">{inv.influencer?.name || 'Unknown'}</span>
                               <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] text-gray-500">
-                                {inv.influencer?.instagram_handle && <span>@{inv.influencer.instagram_handle.replace('@', '')}</span>}
+                                {inv.influencer?.instagram_handle && (
+                                  <a href={igProfileUrl(inv.influencer.instagram_handle) || '#'} target="_blank" rel="noopener noreferrer" className="hover:text-purple-600 transition">
+                                    @{inv.influencer.instagram_handle.replace('@', '')} ↗
+                                  </a>
+                                )}
                                 {inv.influencer?.tier && <span className="capitalize">· {inv.influencer.tier}</span>}
                               </div>
                             </div>
@@ -451,29 +469,29 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                               label="Instagram"
                               emoji="📸"
                               posted={inv.ig_posted}
+                              postUrl={inv.ig_post_url}
                               profileUrl={igProfileUrl(inv.influencer?.instagram_handle)}
-                              onToggle={() => toggleInvitationField(inv.id, 'ig_posted', inv.ig_posted)}
                             />
                             <PlatformPostBadge
                               label="TikTok"
                               emoji="🎵"
                               posted={inv.tt_posted}
+                              postUrl={inv.tt_post_url}
                               profileUrl={ttProfileUrl(inv.influencer?.tiktok_handle)}
-                              onToggle={() => toggleInvitationField(inv.id, 'tt_posted', inv.tt_posted)}
                             />
                             <PlatformPostBadge
                               label="XHS"
                               emoji="📕"
                               posted={inv.xhs_posted}
+                              postUrl={inv.xhs_post_url}
                               profileUrl={xhsProfileUrl(inv.influencer?.xhs_handle)}
-                              onToggle={() => toggleInvitationField(inv.id, 'xhs_posted', inv.xhs_posted)}
                             />
                             <PlatformPostBadge
                               label="Lemon8"
                               emoji="🍋"
                               posted={inv.l8_posted}
+                              postUrl={inv.l8_post_url}
                               profileUrl={l8ProfileUrl(inv.influencer?.lemon8_handle)}
-                              onToggle={() => toggleInvitationField(inv.id, 'l8_posted', inv.l8_posted)}
                             />
                           </div>
                           {/* Post URL - shown below platform icons if it exists */}

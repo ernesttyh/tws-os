@@ -319,10 +319,10 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     loadData(brand);
   };
 
-  const quickUpdateTask = async (taskId: string, updates: Record<string, string>) => {
+  const quickUpdateTask = async (taskId: string, updates: Record<string, string | null>) => {
     if (!brand) return;
     await fetch(`/api/brands/${brand.id}/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates as Record<string, string> } : t));
   };
 
   const deleteTask = async (id: string) => {
@@ -646,8 +646,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                               </select>
                             </td>
                             <td className="px-4 py-3 text-xs text-gray-600">{task.assigned_member?.name || '—'}</td>
-                            <td className={`px-4 py-3 text-xs ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-600'}`}>
-                              {task.due_date ? (isOverdue ? '⚠️ ' : '') + new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '—'}
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <input
+                                type="date"
+                                value={task.due_date || ''}
+                                onChange={e => quickUpdateTask(task.id, { due_date: e.target.value || null })}
+                                className={`text-xs border-0 bg-transparent cursor-pointer focus:ring-1 focus:ring-purple-500 rounded-md p-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-600'}`}
+                              />
                             </td>
                             <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                               <button onClick={() => deleteTask(task.id)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-500 transition">
