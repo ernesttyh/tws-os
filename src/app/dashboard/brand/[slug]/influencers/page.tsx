@@ -150,7 +150,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
   const [dbPage, setDbPage] = useState(0);
 
   // Monthly tracking state — default to "all" to show all data
-  const [trackingMonth, setTrackingMonth] = useState('all');
+  const [trackingMonth, setTrackingMonth] = useState(() => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; });
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -200,37 +200,6 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
   useEffect(() => {
     if (brandId) loadInvitations(brandId, trackingMonth);
   }, [trackingMonth, brandId, loadInvitations]);
-
-  // Toggle invitation field
-  const toggleInvitationField = async (invId: string, field: 'invited' | 'confirmed' | 'attended' | 'posted' | 'ig_posted' | 'tt_posted' | 'xhs_posted' | 'l8_posted', current: boolean) => {
-    const updates: Record<string, boolean> = { [field]: !current };
-    // If toggling a platform field ON, also set posted = true
-    if (['ig_posted', 'tt_posted', 'xhs_posted', 'l8_posted'].includes(field) && !current) {
-      updates.posted = true;
-    }
-    // If toggling a platform field OFF, check if any others are still on
-    if (['ig_posted', 'tt_posted', 'xhs_posted', 'l8_posted'].includes(field) && current) {
-      const inv = invitations.find(i => i.id === invId);
-      if (inv) {
-        const platforms = { ig_posted: inv.ig_posted, tt_posted: inv.tt_posted, xhs_posted: inv.xhs_posted, l8_posted: inv.l8_posted, [field]: false };
-        const anyPosted = platforms.ig_posted || platforms.tt_posted || platforms.xhs_posted || platforms.l8_posted;
-        if (!anyPosted) updates.posted = false;
-      }
-    }
-    const { error } = await supabase
-      .from('influencer_invitations')
-      .update(updates)
-      .eq('id', invId);
-    if (!error && brandId) loadInvitations(brandId, trackingMonth);
-  };
-
-  // Update post URL
-  const updatePostUrl = async (invId: string, url: string) => {
-    await supabase
-      .from('influencer_invitations')
-      .update({ post_url: url || null })
-      .eq('id', invId);
-  };
 
   // Invite KOL search
   const searchForInvite = useCallback(async (query: string) => {
@@ -439,28 +408,19 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                           </td>
                         )}
                         <td className="py-3 px-2 sm:px-3 text-center">
-                          <button
-                            onClick={() => toggleInvitationField(inv.id, 'invited', inv.invited)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.invited ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                          >
+                          <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md inline-flex items-center justify-center ${inv.invited ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
                             {inv.invited ? <Check size={14} /> : <X size={14} />}
-                          </button>
+                          </span>
                         </td>
                         <td className="py-3 px-2 sm:px-3 text-center">
-                          <button
-                            onClick={() => toggleInvitationField(inv.id, 'confirmed', inv.confirmed)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.confirmed ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                          >
+                          <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md inline-flex items-center justify-center ${inv.confirmed ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
                             {inv.confirmed ? <Check size={14} /> : <X size={14} />}
-                          </button>
+                          </span>
                         </td>
                         <td className="py-3 px-2 sm:px-3 text-center">
-                          <button
-                            onClick={() => toggleInvitationField(inv.id, 'attended', inv.attended)}
-                            className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition ${inv.attended ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
-                          >
+                          <span className={`w-6 h-6 sm:w-7 sm:h-7 rounded-md inline-flex items-center justify-center ${inv.attended ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-400'}`}>
                             {inv.attended ? <Check size={14} /> : <X size={14} />}
-                          </button>
+                          </span>
                         </td>
                         {/* Platform Posts Column */}
                         <td className="py-2 px-2 sm:px-4">
