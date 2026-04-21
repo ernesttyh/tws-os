@@ -38,17 +38,22 @@ interface Invitation {
 const TIERS = [{ value: 'nano', label: 'Nano (1K-10K)' }, { value: 'micro', label: 'Micro (10K-50K)' }, { value: 'mid', label: 'Mid (50K-500K)' }, { value: 'macro', label: 'Macro (500K-1M)' }, { value: 'mega', label: 'Mega (1M+)' }];
 const STATUSES = [{ value: 'prospecting', label: 'Prospecting' }, { value: 'contacted', label: 'Contacted' }, { value: 'negotiating', label: 'Negotiating' }, { value: 'confirmed', label: 'Confirmed' }, { value: 'active', label: 'Active' }, { value: 'completed', label: 'Completed' }, { value: 'declined', label: 'Declined' }];
 
+// Generate months from Jan 2025 to 6 months ahead
 const TRACKING_MONTHS = (() => {
   const months: string[] = [];
   const now = new Date();
-  for (let i = -3; i <= 6; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + 6, 1);
+  const start = new Date(2025, 0, 1); // Jan 2025
+  const d = new Date(start);
+  while (d <= end) {
     months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    d.setMonth(d.getMonth() + 1);
   }
   return months;
 })();
 
 function formatTrackingMonth(m: string): string {
+  if (m === 'all') return 'All Months';
   const [yr, mo] = m.split('-');
   const date = new Date(parseInt(yr), parseInt(mo) - 1, 1);
   return date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -76,9 +81,8 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
   const [dbTier, setDbTier] = useState('all');
   const [dbPage, setDbPage] = useState(0);
 
-  // Monthly tracking state
-  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-  const [trackingMonth, setTrackingMonth] = useState(currentMonth);
+  // Monthly tracking state — default to "all" to show all data
+  const [trackingMonth, setTrackingMonth] = useState('all');
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -102,12 +106,18 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
 
   const loadInvitations = useCallback(async (bid: string, month: string) => {
     setTrackingLoading(true);
-    const { data, error } = await supabase
+    let query = supabase
       .from('influencer_invitations')
       .select('*, influencer:influencers(id, name, instagram_handle, tiktok_handle, tier, followers_ig)')
       .eq('brand_id', bid)
-      .eq('event_month', month)
-      .order('created_at', { ascending: true });
+      .order('event_month', { ascending: false });
+
+    if (month !== 'all') {
+      // event_month is a date column stored as YYYY-MM-01, so append -01 for matching
+      query = query.eq('event_month', `${month}-01`);
+    }
+
+    const { data, error } = await query;
     if (!error && data) setInvitations(data as Invitation[]);
     else setInvitations([]);
     setTrackingLoading(false);
@@ -155,17 +165,21 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
     return () => clearTimeout(timer);
   }, [inviteSearch, searchForInvite]);
 
+  // For new invitations, use current month
+  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const inviteMonth = trackingMonth === 'all' ? currentMonth : trackingMonth;
+
   const createInvitation = async (influencerId: string) => {
     if (!brandId) return;
     // Check if already invited this month
-    const existing = invitations.find(inv => inv.influencer_id === influencerId);
+    const existing = invitations.find(inv => inv.influencer_id === influencerId && inv.event_month?.startsWith(inviteMonth));
     if (existing) { alert('This KOL is already invited for this month.'); return; }
     const { error } = await supabase
       .from('influencer_invitations')
       .insert({
         brand_id: brandId,
         influencer_id: influencerId,
-        event_month: trackingMonth,
+        event_month: `${inviteMonth}-01`,
         invited: true,
         confirmed: false,
         attended: false,
@@ -208,6 +222,13 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
     posted: invitations.filter(inv => inv.posted).length,
   };
 
+  // Helper to display month label for each invitation row when in "All Months" view
+  const getInvMonthLabel = (eventMonth: string | null) => {
+    if (!eventMonth) return '';
+    const d = new Date(eventMonth);
+    return d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  };
+
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse"><div className="h-64 bg-white/5 rounded" /></div></div>;
 
   return (
@@ -236,6 +257,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                 onChange={e => setTrackingMonth(e.target.value)}
                 className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-xs sm:text-sm"
               >
+                <option value="all" className="bg-[#1a1a2e]">All Months</option>
                 {TRACKING_MONTHS.map(m => (
                   <option key={m} value={m} className="bg-[#1a1a2e]">{formatTrackingMonth(m)}</option>
                 ))}
@@ -278,7 +300,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
           ) : invitations.length === 0 ? (
             <EmptyState
               icon={CalendarCheck}
-              title={`No KOL invitations for ${formatTrackingMonth(trackingMonth)}`}
+              title={trackingMonth === 'all' ? 'No KOL invitations yet' : `No KOL invitations for ${formatTrackingMonth(trackingMonth)}`}
               description="Invite KOLs from the database to track their status this month"
               action={{ label: 'Invite KOL', onClick: () => { setShowInviteModal(true); setInviteSearch(''); setInviteResults([]); } }}
             />
@@ -289,6 +311,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                   <thead>
                     <tr className="border-b border-white/10">
                       <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400">KOL</th>
+                      {trackingMonth === 'all' && <th className="text-left py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Month</th>}
                       <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-400 hidden sm:table-cell">Handle</th>
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Invited</th>
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-400">Confirmed</th>
@@ -312,6 +335,11 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                             </div>
                           </div>
                         </td>
+                        {trackingMonth === 'all' && (
+                          <td className="py-3 px-2 sm:px-3">
+                            <span className="text-[10px] sm:text-xs text-gray-400 whitespace-nowrap">{getInvMonthLabel(inv.event_month)}</span>
+                          </td>
+                        )}
                         <td className="py-3 px-3 sm:px-4 hidden sm:table-cell">
                           <div className="text-xs text-gray-400 space-y-0.5">
                             {inv.influencer?.instagram_handle && <div>📸 @{inv.influencer.instagram_handle.replace('@', '')}</div>}
@@ -592,7 +620,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
       </Modal>
 
       {/* Invite KOL Modal */}
-      <Modal open={showInviteModal} onClose={() => { setShowInviteModal(false); setInviteSearch(''); setInviteResults([]); }} title={`Invite KOL — ${formatTrackingMonth(trackingMonth)}`} size="md">
+      <Modal open={showInviteModal} onClose={() => { setShowInviteModal(false); setInviteSearch(''); setInviteResults([]); }} title={`Invite KOL — ${formatTrackingMonth(inviteMonth)}`} size="md">
         <div className="space-y-4">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
@@ -602,7 +630,6 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
               onChange={e => setInviteSearch(e.target.value)}
               placeholder="Search KOLs by name or handle..."
               className="w-full pl-10 pr-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-purple-500"
-              autoFocus
             />
           </div>
 
