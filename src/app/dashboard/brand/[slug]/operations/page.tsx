@@ -173,24 +173,33 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   }, [loadPdfJs]);
 
   // File upload handler — supports PDF, TXT, MD files
+  // PDFs are sent to server for proper extraction; client just stores the file
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFile(true);
     try {
-      let text = '';
       const ext = file.name.split('.').pop()?.toLowerCase();
+      let previewText = '';
 
       if (ext === 'pdf') {
-        text = await extractPdfText(file);
+        // For PDFs: just store the file — server will extract text properly
+        // Try client-side extraction for preview only, but don't fail if it doesn't work
+        try {
+          previewText = await extractPdfText(file);
+        } catch {
+          previewText = `[PDF file — ${(file.size / 1024).toFixed(0)} KB — text will be extracted by AI on the server]`;
+        }
+        if (!previewText.trim()) {
+          previewText = `[PDF file — ${(file.size / 1024).toFixed(0)} KB — text will be extracted by AI on the server]`;
+        }
       } else {
-        text = await file.text();
+        previewText = await file.text();
+        if (!previewText.trim()) {
+          throw new Error('File appears to be empty. Please check the file.');
+        }
       }
-
-      if (!text.trim()) {
-        throw new Error('Could not extract text from this file. Please try exporting as .txt instead.');
-      }
-      setUploadedFile({ name: file.name, size: file.size, content: text });
+      setUploadedFile({ name: file.name, size: file.size, content: previewText });
       setRawFile(file);
     } catch (err) {
       console.error('Upload failed:', err);
@@ -705,10 +714,18 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                             ✅ File Ready
                           </h4>
                           <p className="text-xs text-green-700 mt-0.5">{uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(1)} KB)</p>
-                          <p className="text-xs text-green-600 mt-1.5 line-clamp-2 font-mono bg-green-100/50 rounded px-2 py-1">
-                            {uploadedFile.content.slice(0, 200)}{uploadedFile.content.length > 200 ? '...' : ''}
-                          </p>
-                          <p className="text-[10px] text-green-600 mt-1">{uploadedFile.content.split('\n').filter(l => l.trim()).length} lines detected</p>
+                          {uploadedFile.content.startsWith('[PDF file') ? (
+                            <p className="text-xs text-green-600 mt-1.5 bg-green-100/50 rounded px-2 py-1">
+                              📄 PDF ready — AI will extract and process the full text on the server
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-xs text-green-600 mt-1.5 line-clamp-2 font-mono bg-green-100/50 rounded px-2 py-1">
+                                {uploadedFile.content.slice(0, 200)}{uploadedFile.content.length > 200 ? '...' : ''}
+                              </p>
+                              <p className="text-[10px] text-green-600 mt-1">{uploadedFile.content.split('\n').filter(l => l.trim()).length} lines detected</p>
+                            </>
+                          )}
                         </div>
                       </div>
                       <button onClick={() => setUploadedFile(null)} className="p-1 rounded hover:bg-green-200 text-green-600 transition shrink-0">
