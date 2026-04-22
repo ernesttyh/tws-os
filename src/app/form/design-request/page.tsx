@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
@@ -49,6 +49,13 @@ export default function DesignRequestForm() {
   const [dragActive, setDragActive] = useState(false)
   const [selectedSpecs, setSelectedSpecs] = useState<string[]>([])
   
+  // Brand autocomplete state
+  const [brandSearch, setBrandSearch] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null)
+  const brandInputRef = useRef<HTMLInputElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
+  
   const [form, setForm] = useState({
     brand_id: '',
     title: '',
@@ -72,6 +79,46 @@ export default function DesignRequestForm() {
         if (data) setBrands(data)
       })
   }, [])
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node) &&
+        brandInputRef.current &&
+        !brandInputRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Filter brands based on search input (only show when 1+ chars typed)
+  const filteredBrands = brandSearch.length >= 1
+    ? brands.filter(b =>
+        b.name.toLowerCase().includes(brandSearch.toLowerCase())
+      )
+    : []
+
+  const handleBrandSelect = (brand: Brand) => {
+    setSelectedBrand(brand)
+    setBrandSearch(brand.name)
+    setForm(f => ({ ...f, brand_id: brand.id }))
+    setShowSuggestions(false)
+  }
+
+  const handleBrandInputChange = (value: string) => {
+    setBrandSearch(value)
+    setShowSuggestions(true)
+    // Clear selection if user edits the text
+    if (selectedBrand && value !== selectedBrand.name) {
+      setSelectedBrand(null)
+      setForm(f => ({ ...f, brand_id: '' }))
+    }
+  }
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -181,7 +228,7 @@ export default function DesignRequestForm() {
             The design team will review and get started soon.
           </p>
           <button
-            onClick={() => { setSubmitted(false); setForm({ brand_id: '', title: '', deadline: '', dishes_to_feature: '', copy_messaging: '', artwork_specs: '', submission_notes: '', submitted_by_name: '', submitted_by_email: '', priority: 'normal' }); setFiles([]); setSelectedSpecs([]) }}
+            onClick={() => { setSubmitted(false); setForm({ brand_id: '', title: '', deadline: '', dishes_to_feature: '', copy_messaging: '', artwork_specs: '', submission_notes: '', submitted_by_name: '', submitted_by_email: '', priority: 'normal' }); setFiles([]); setSelectedSpecs([]); setBrandSearch(''); setSelectedBrand(null) }}
             className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition font-medium"
           >
             Submit Another Request
@@ -251,23 +298,79 @@ export default function DesignRequestForm() {
             />
           </div>
 
-          {/* Brand */}
+          {/* Brand — Autocomplete Input */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <label className="block text-sm font-semibold text-gray-900 mb-1">
               BRAND <span className="text-red-500">*</span>
             </label>
-            <p className="text-xs text-gray-500 mb-2">Select the brand this artwork is for</p>
-            <select
-              required
+            <p className="text-xs text-gray-500 mb-2">Start typing the brand name</p>
+            <div className="relative">
+              <input
+                ref={brandInputRef}
+                type="text"
+                required
+                value={brandSearch}
+                onChange={e => handleBrandInputChange(e.target.value)}
+                onFocus={() => { if (brandSearch.length >= 1) setShowSuggestions(true) }}
+                placeholder="Type brand name..."
+                autoComplete="off"
+                className={`w-full border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
+                  selectedBrand
+                    ? 'border-green-400 bg-green-50'
+                    : 'border-gray-300'
+                }`}
+              />
+              {selectedBrand && (
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <span className="text-green-600 text-sm">✓</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedBrand(null)
+                      setBrandSearch('')
+                      setForm(f => ({ ...f, brand_id: '' }))
+                      brandInputRef.current?.focus()
+                    }}
+                    className="text-gray-400 hover:text-gray-600 text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              
+              {/* Suggestions dropdown */}
+              {showSuggestions && filteredBrands.length > 0 && !selectedBrand && (
+                <div
+                  ref={suggestionsRef}
+                  className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto"
+                >
+                  {filteredBrands.map(brand => (
+                    <button
+                      key={brand.id}
+                      type="button"
+                      onClick={() => handleBrandSelect(brand)}
+                      className="w-full text-left px-4 py-3 text-sm hover:bg-indigo-50 hover:text-indigo-700 transition border-b border-gray-50 last:border-0"
+                    >
+                      {brand.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              {/* No match message */}
+              {showSuggestions && brandSearch.length >= 2 && filteredBrands.length === 0 && !selectedBrand && (
+                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3">
+                  <p className="text-sm text-gray-500">No brand found matching &ldquo;{brandSearch}&rdquo;</p>
+                  <p className="text-xs text-gray-400 mt-1">Check the spelling and try again</p>
+                </div>
+              )}
+            </div>
+            {/* Hidden required field for form validation */}
+            <input
+              type="hidden"
               value={form.brand_id}
-              onChange={e => setForm(f => ({ ...f, brand_id: e.target.value }))}
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
-            >
-              <option value="">Select brand...</option>
-              {brands.map(b => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
+              required
+            />
           </div>
 
           {/* Title of Artwork */}
