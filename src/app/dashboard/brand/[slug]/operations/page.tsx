@@ -341,8 +341,11 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         setShowProcessSuccess(true);
         setFoundActionItems(processed.actionItemCount);
         setTimeout(() => setShowProcessSuccess(false), 15000);
+      } else {
+        const errData = await res.json().catch(() => ({ error: 'Unknown error' }));
+        alert(`⚠️ Failed to create meeting note: ${errData.error || 'Server error'}\n\nPlease try again.`);
       }
-    } catch (err) { console.error('Create failed:', err); }
+    } catch (err) { console.error('Create failed:', err); alert('⚠️ Network error creating meeting note. Please try again.'); }
     setIsProcessing(false);
   };
 
