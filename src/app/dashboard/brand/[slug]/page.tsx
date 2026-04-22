@@ -12,7 +12,7 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
   const [data, setData] = useState<{
     tasks: { id: string; title: string; status: string; due_date: string | null; priority: string }[];
     content: { id: string; title: string; status: string; post_date: string | null; month: string | null }[];
-    meetings: { id: string; title: string; meeting_date: string }[];
+    meetings: { id: string; title: string; event_date: string; event_type: string; location: string | null }[];
     events: { id: string; title: string; event_date: string; event_type: string; location: string | null }[];
     invitations: { id: string; event_name: string; attendance_status: string; ig_post_url: string | null; tt_post_url: string | null; xhs_post_url: string | null }[];
     campaigns: { id: string; name: string; status: string; spend: number; impressions: number; clicks: number }[];
