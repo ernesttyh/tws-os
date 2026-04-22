@@ -56,6 +56,10 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const [showExtractModal, setShowExtractModal] = useState(false);
   const [extractedTasks, setExtractedTasks] = useState<{ title: string; selected: boolean }[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<{ name: string; size: number; content: string } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showProcessSuccess, setShowProcessSuccess] = useState(false);
+  const [foundActionItems, setFoundActionItems] = useState(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createBrowserClient();
@@ -129,25 +133,151 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     }
   };
 
-  // File upload handler for transcripts
+  // File upload handler — stores file content, does NOT create meeting yet
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFile(true);
     try {
       const text = await file.text();
-      // Create meeting with transcript
-      if (!brand || !newTitle.trim()) { setUploadingFile(false); return; }
+      setUploadedFile({ name: file.name, size: file.size, content: text });
+    } catch (err) {
+      console.error('Upload failed:', err);
+    }
+    setUploadingFile(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Smart transcript processor — structures raw text into organized meeting notes
+  const processTranscript = (text: string, source: string): { html: string; actionItemCount: number } => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length === 0) return { html: '<p></p>', actionItemCount: 0 };
+
+    const speakers = new Set<string>();
+    const conversations: { speaker: string; text: string; isAction: boolean }[] = [];
+    const actionItems: string[] = [];
+    const decisions: string[] = [];
+
+    const actionPatterns = [
+      /\b(?:need to|needs to|will do|should|must|have to|going to|follow up|action item|next step|deadline|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next week|end of))\b/i,
+      /\b(?:please|pls|ensure|make sure|arrange|prepare|send|submit|complete|finish|update|check with|confirm|book|schedule|set up|reach out|coordinate|draft|share)\b/i,
+    ];
+    const decisionPatterns = /\b(?:agreed|decided|confirmed|approved|let'?s go with|we'?ll go|final decision|conclusion|settled on)\b/i;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.length < 2) continue;
+
+      // Skip timestamp-only lines
+      if (/^\d{1,2}:\d{2}(:\d{2})?\s*$/.test(trimmed)) continue;
+
+      let speaker = '';
+      let msg = trimmed;
+
+      // WhatsApp format: [date, time] Sender: message
+      const waMatch = trimmed.match(/^\[?([\d/]+,?\s*[\d:]+\s*(?:AM|PM)?)\]?\s*-?\s*([^:]+):\s*(.+)/i);
+      if (waMatch) {
+        speaker = waMatch[2].trim();
+        msg = waMatch[3].trim();
+      } else {
+        // Speaker: message format
+        const spkMatch = trimmed.match(/^([A-Za-z][A-Za-z\s.]{0,28}):\s+(.+)/);
+        if (spkMatch) {
+          speaker = spkMatch[1].trim();
+          msg = spkMatch[2].trim();
+        }
+      }
+
+      if (speaker) speakers.add(speaker);
+
+      // Detect action items
+      const isAction = actionPatterns.some(p => p.test(msg));
+      if (isAction) actionItems.push(speaker ? `${speaker}: ${msg}` : msg);
+
+      // Detect decisions
+      if (decisionPatterns.test(msg)) decisions.push(speaker ? `${speaker}: ${msg}` : msg);
+
+      conversations.push({ speaker, text: msg, isAction });
+    }
+
+    // ===== Build structured HTML =====
+    let html = '';
+    const sourceLabel = source === 'plaud' ? 'Plaud recording' : source === 'whatsapp' ? 'WhatsApp export' : 'uploaded transcript';
+
+    // Header
+    html += '<h2>📋 Meeting Summary</h2>';
+    html += `<p><em>Auto-processed from ${sourceLabel}. ${conversations.length} messages analyzed. Review and edit as needed.</em></p>`;
+
+    // Attendees
+    if (speakers.size > 0) {
+      html += '<h3>👥 Attendees</h3>';
+      html += '<ul>' + Array.from(speakers).map(s => `<li>${s}</li>`).join('') + '</ul>';
+    }
+
+    // Discussion
+    html += '<hr/><h3>💬 Discussion</h3>';
+    if (conversations.length <= 80) {
+      html += conversations.map(c => {
+        if (c.speaker) return `<p><strong>${c.speaker}</strong>: ${c.text}</p>`;
+        return `<p>${c.text}</p>`;
+      }).join('');
+    } else {
+      // Long transcript — show beginning and end
+      html += `<p><em>${conversations.length} messages — showing key sections:</em></p>`;
+      const start = conversations.slice(0, 40);
+      const end = conversations.slice(-30);
+      html += start.map(c => c.speaker ? `<p><strong>${c.speaker}</strong>: ${c.text}</p>` : `<p>${c.text}</p>`).join('');
+      html += `<p><em>... ${conversations.length - 70} more messages ...</em></p>`;
+      html += end.map(c => c.speaker ? `<p><strong>${c.speaker}</strong>: ${c.text}</p>` : `<p>${c.text}</p>`).join('');
+    }
+
+    // Decisions
+    html += '<hr/><h3>✅ Decisions</h3>';
+    if (decisions.length > 0) {
+      html += '<ul>' + decisions.map(d => `<li>${d}</li>`).join('') + '</ul>';
+    } else {
+      html += '<ul><li><em>Review transcript and add key decisions here</em></li></ul>';
+    }
+
+    // Action Items
+    html += '<h3>📌 Action Items</h3>';
+    if (actionItems.length > 0) {
+      html += '<ul data-type="taskList">';
+      // Deduplicate
+      const seen = new Set<string>();
+      for (const item of actionItems) {
+        const key = item.toLowerCase().replace(/^[^:]+:\s*/, '');
+        if (!seen.has(key)) {
+          seen.add(key);
+          html += `<li data-type="taskItem" data-checked="false">${item}</li>`;
+        }
+      }
+      html += '</ul>';
+    } else {
+      html += '<ul data-type="taskList"><li data-type="taskItem" data-checked="false">Review transcript and add action items</li></ul>';
+    }
+
+    const uniqueActions = new Set(actionItems.map(a => a.toLowerCase().replace(/^[^:]+:\s*/, '')));
+    return { html, actionItemCount: uniqueActions.size };
+  };
+
+  // Create meeting and process uploaded transcript
+  const createAndProcessMeeting = async () => {
+    if (!brand) return;
+    setIsProcessing(true);
+    const rawText = uploadedFile?.content || '';
+    const processed = processTranscript(rawText, newSource);
+    try {
       const res = await fetch(`/api/brands/${brand.id}/meetings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: newTitle || `${newSource === 'plaud' ? 'Plaud' : newSource === 'whatsapp' ? 'WhatsApp' : 'Transcript'} — ${new Date(newDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
+          title: newTitle || `${newSource === 'plaud' ? 'Plaud' : newSource === 'whatsapp' ? 'WhatsApp' : 'Transcript'} Notes — ${new Date(newDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`,
           meeting_date: newDate,
           meeting_type: newType,
           source: newSource,
-          transcript_raw: text,
-          content: formatTranscript(text, newSource),
+          transcript_raw: rawText,
+          content: processed.html,
         }),
       });
       if (res.ok) {
@@ -155,46 +285,27 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         setMeetings(prev => [meeting, ...prev]);
         setSelectedMeeting(meeting);
         setIsNewMeeting(false);
+        setUploadedFile(null);
+        setNewTitle('');
+        setShowProcessSuccess(true);
+        setFoundActionItems(processed.actionItemCount);
+        setTimeout(() => setShowProcessSuccess(false), 15000);
       }
-    } catch (err) { console.error('Upload failed:', err); }
-    setUploadingFile(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    } catch (err) { console.error('Create failed:', err); }
+    setIsProcessing(false);
   };
 
-  // Format uploaded transcript into structured HTML
-  const formatTranscript = (text: string, source: string): string => {
-    const lines = text.split('\n').filter(l => l.trim());
-    if (source === 'whatsapp') {
-      // WhatsApp format: [date, time] Sender: message
-      let html = '<h2>Meeting Notes (from WhatsApp)</h2>';
-      html += '<p><em>Auto-generated from WhatsApp export. Edit and organize as needed.</em></p><hr/>';
-      const msgs = lines.map(l => {
-        const match = l.match(/^\[?([\d/]+,?\s*[\d:]+\s*(?:AM|PM)?)\]?\s*-?\s*([^:]+):\s*(.+)/i);
-        if (match) return `<p><strong>${match[2].trim()}</strong>: ${match[3].trim()}</p>`;
-        return `<p>${l}</p>`;
-      });
-      html += msgs.join('');
-      html += '<hr/><h2>Action Items</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false">Add action items here</li></ul>';
-      return html;
-    }
-    // Default: Plaud / generic transcript
-    let html = '<h2>Meeting Notes (from Transcript)</h2>';
-    html += '<p><em>Auto-generated from uploaded transcript. Edit and organize as needed.</em></p><hr/>';
-    // Try to detect speaker labels
-    const hasTimestamps = lines.some(l => /^\d{1,2}:\d{2}/.test(l.trim()));
-    const hasSpeakers = lines.some(l => /^(Speaker\s*\d+|[A-Z][a-z]+\s*[A-Z]?[a-z]*)\s*:/i.test(l.trim()));
-    if (hasSpeakers) {
-      html += lines.map(l => {
-        const match = l.match(/^([^:]+):\s*(.+)/);
-        if (match) return `<p><strong>${match[1].trim()}</strong>: ${match[2].trim()}</p>`;
-        return `<p>${l}</p>`;
-      }).join('');
-    } else {
-      html += lines.map(l => `<p>${l}</p>`).join('');
-    }
-    html += '<hr/><h2>Key Decisions</h2><ul><li>List key decisions here</li></ul>';
-    html += '<h2>Action Items</h2><ul data-type="taskList"><li data-type="taskItem" data-checked="false">Add action items here</li></ul>';
-    return html;
+  // Re-process an existing meeting's transcript
+  const reprocessTranscript = async () => {
+    if (!selectedMeeting?.transcript_raw || !brand) return;
+    setIsProcessing(true);
+    const processed = processTranscript(selectedMeeting.transcript_raw, selectedMeeting.source);
+    await handleContentChange(selectedMeeting.id, processed.html);
+    setSelectedMeeting(prev => prev ? { ...prev, content: processed.html } : prev);
+    setShowProcessSuccess(true);
+    setFoundActionItems(processed.actionItemCount);
+    setTimeout(() => setShowProcessSuccess(false), 15000);
+    setIsProcessing(false);
   };
 
   // Extract tasks from meeting content
@@ -459,7 +570,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       {tab === 'meetings' && isNewMeeting && !selectedMeeting && (
         <div className="space-y-4 animate-fade-in">
           <div className="flex items-center gap-3">
-            <button onClick={() => setIsNewMeeting(false)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition">
+            <button onClick={() => { setIsNewMeeting(false); setUploadedFile(null); }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition">
               <ArrowLeft size={18} />
             </button>
             <h2 className="text-base sm:text-lg font-semibold text-gray-900">New Meeting Note</h2>
@@ -469,45 +580,88 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="Date" name="meeting_date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
               <FormField label="Type" name="meeting_type" value={newType} onChange={e => setNewType(e.target.value)} options={[{ value: 'workplan', label: '📋 Workplan' }, { value: 'review', label: '🔍 Review' }, { value: 'brainstorm', label: '💡 Brainstorm' }, { value: 'adhoc', label: '⚡ Ad-hoc' }]} />
-              <FormField label="Source" name="source" value={newSource} onChange={e => setNewSource(e.target.value)} options={[{ value: 'manual', label: '✍️ Type Manually' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }, { value: 'transcript', label: '📄 Upload Transcript' }]} />
+              <FormField label="Source" name="source" value={newSource} onChange={e => { setNewSource(e.target.value); setUploadedFile(null); }} options={[{ value: 'manual', label: '✍️ Type Manually' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }, { value: 'transcript', label: '📄 Upload Transcript' }]} />
             </div>
 
             {/* File upload section for non-manual sources */}
             {newSource !== 'manual' && (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 bg-purple-100 rounded-lg shrink-0">
-                    <Upload size={20} className="text-purple-600" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-sm font-medium text-purple-900">
-                      {newSource === 'plaud' ? 'Upload Plaud Recording/Transcript' : newSource === 'whatsapp' ? 'Upload WhatsApp Export' : 'Upload Transcript File'}
-                    </h4>
-                    <p className="text-xs text-purple-700 mt-1">
-                      {newSource === 'plaud' ? 'Export your Plaud transcript as .txt and upload it here. The system will format it into meeting notes.' :
-                       newSource === 'whatsapp' ? 'Export your WhatsApp chat (without media) and upload the .txt file. Messages will be formatted into notes.' :
-                       'Upload a .txt transcript file. Speaker labels and timestamps will be detected and formatted.'}
-                    </p>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".txt,.doc,.docx,.pdf"
-                      onChange={handleFileUpload}
-                      className="mt-3 text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer"
-                      disabled={!newTitle.trim() || uploadingFile}
-                    />
-                    {!newTitle.trim() && <p className="text-[10px] text-amber-600 mt-1">⚠️ Enter a title first before uploading</p>}
-                    {uploadingFile && <p className="text-xs text-purple-600 mt-2 flex items-center gap-1.5"><Clock size={12} className="animate-spin" /> Processing file...</p>}
+              <div className="space-y-3">
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-purple-100 rounded-lg shrink-0">
+                      <Upload size={20} className="text-purple-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-purple-900">
+                        {newSource === 'plaud' ? 'Upload Plaud Transcript' : newSource === 'whatsapp' ? 'Upload WhatsApp Export' : 'Upload Transcript File'}
+                      </h4>
+                      <p className="text-xs text-purple-700 mt-1">
+                        {newSource === 'plaud' ? 'Export your Plaud transcript as .txt and upload it here. We\'ll auto-detect speakers and extract action items.' :
+                         newSource === 'whatsapp' ? 'Export your WhatsApp chat (without media) and upload the .txt file.' :
+                         'Upload a .txt transcript file. Speaker labels and timestamps will be detected.'}
+                      </p>
+                      {!uploadedFile && (
+                        <>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".txt,.doc,.docx,.pdf,.md"
+                            onChange={handleFileUpload}
+                            className="mt-3 text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer"
+                            disabled={uploadingFile}
+                          />
+                          {uploadingFile && <p className="text-xs text-purple-600 mt-2 flex items-center gap-1.5"><Clock size={12} className="animate-spin" /> Reading file...</p>}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
+
+                {/* File preview after upload */}
+                {uploadedFile && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="p-2 bg-green-100 rounded-lg shrink-0">
+                          <FileText size={20} className="text-green-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-sm font-medium text-green-900 flex items-center gap-2">
+                            ✅ File Ready
+                          </h4>
+                          <p className="text-xs text-green-700 mt-0.5">{uploadedFile.name} ({(uploadedFile.size / 1024).toFixed(1)} KB)</p>
+                          <p className="text-xs text-green-600 mt-1.5 line-clamp-2 font-mono bg-green-100/50 rounded px-2 py-1">
+                            {uploadedFile.content.slice(0, 200)}{uploadedFile.content.length > 200 ? '...' : ''}
+                          </p>
+                          <p className="text-[10px] text-green-600 mt-1">{uploadedFile.content.split('\n').filter(l => l.trim()).length} lines detected</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setUploadedFile(null)} className="p-1 rounded hover:bg-green-200 text-green-600 transition shrink-0">
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setIsNewMeeting(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition">Cancel</button>
-              {newSource === 'manual' && (
+              <button onClick={() => { setIsNewMeeting(false); setUploadedFile(null); }} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition">Cancel</button>
+              {newSource === 'manual' ? (
                 <button onClick={createMeeting} disabled={!newTitle.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
                   <FileText size={14} /> Create & Start Writing
+                </button>
+              ) : (
+                <button
+                  onClick={createAndProcessMeeting}
+                  disabled={!newTitle.trim() || !uploadedFile || isProcessing}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2 relative"
+                >
+                  {isProcessing ? (
+                    <><Clock size={14} className="animate-spin" /> Processing...</>
+                  ) : (
+                    <><Sparkles size={14} /> Create & Process Notes</>
+                  )}
                 </button>
               )}
             </div>
@@ -556,6 +710,42 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
               </button>
             </div>
           </div>
+
+          {/* Process success banner */}
+          {showProcessSuccess && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center justify-between gap-3 animate-fade-in">
+              <div className="flex items-center gap-2 text-sm text-green-800">
+                <Sparkles size={16} className="text-green-600 shrink-0" />
+                <span>
+                  <strong>Notes generated!</strong> {foundActionItems > 0 ? `${foundActionItems} action item${foundActionItems > 1 ? 's' : ''} detected.` : 'Review and edit as needed.'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {foundActionItems > 0 && (
+                  <button onClick={handleExtractTasks} className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs rounded-lg transition font-medium">
+                    <ListTodo size={13} /> Extract {foundActionItems} Task{foundActionItems > 1 ? 's' : ''}
+                  </button>
+                )}
+                <button onClick={() => setShowProcessSuccess(false)} className="p-1 rounded hover:bg-green-200 text-green-600 transition">
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Reprocess button for transcript-based notes */}
+          {selectedMeeting.transcript_raw && !showProcessSuccess && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={reprocessTranscript}
+                disabled={isProcessing}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs rounded-lg transition border border-purple-200"
+              >
+                {isProcessing ? <><Clock size={12} className="animate-spin" /> Reprocessing...</> : <><Sparkles size={12} /> Reprocess Transcript</>}
+              </button>
+              <span className="text-[10px] text-gray-400">Re-analyze the raw transcript to regenerate notes</span>
+            </div>
+          )}
 
           <RichTextEditor
             content={selectedMeeting.content || ''}
