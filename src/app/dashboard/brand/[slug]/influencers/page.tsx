@@ -393,12 +393,16 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                               {(inv.influencer?.name || '?').charAt(0).toUpperCase()}
                             </div>
                             <div className="min-w-0">
-                              <span className="text-gray-900 text-xs sm:text-sm font-medium truncate block">{inv.influencer?.name || 'Unknown'}</span>
+                              {inv.influencer?.instagram_handle ? (
+                                <a href={igProfileUrl(inv.influencer.instagram_handle) || '#'} target="_blank" rel="noopener noreferrer" className="text-gray-900 text-xs sm:text-sm font-medium truncate block hover:text-purple-600 transition">
+                                  {inv.influencer?.name || 'Unknown'} <span className="text-[9px] text-gray-400">↗</span>
+                                </a>
+                              ) : (
+                                <span className="text-gray-900 text-xs sm:text-sm font-medium truncate block">{inv.influencer?.name || 'Unknown'}</span>
+                              )}
                               <div className="flex items-center gap-1.5 text-[9px] sm:text-[10px] text-gray-500">
                                 {inv.influencer?.instagram_handle && (
-                                  <a href={igProfileUrl(inv.influencer.instagram_handle) || '#'} target="_blank" rel="noopener noreferrer" className="hover:text-purple-600 transition">
-                                    @{inv.influencer.instagram_handle.replace('@', '')} ↗
-                                  </a>
+                                  <span>@{inv.influencer.instagram_handle.replace('@', '')}</span>
                                 )}
                                 {inv.influencer?.tier && <span className="capitalize">· {inv.influencer.tier}</span>}
                               </div>
