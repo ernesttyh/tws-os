@@ -11,12 +11,12 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{
     tasks: { id: string; title: string; status: string; due_date: string | null; priority: string }[];
-    content: { id: string; title: string; status: string; post_date: string | null; month: string | null }[];
-    meetings: { id: string; title: string; event_date: string; event_type: string; location: string | null }[];
-    events: { id: string; title: string; event_date: string; event_type: string; location: string | null }[];
-    invitations: { id: string; event_name: string; attendance_status: string; ig_post_url: string | null; tt_post_url: string | null; xhs_post_url: string | null }[];
-    campaigns: { id: string; name: string; status: string; spend: number; impressions: number; clicks: number }[];
-    contentAll: { id: string; status: string; post_date: string | null }[];
+    content: { id: string; title: string; status: string; date: string | null; month: string | null }[];
+    meetings: { id: string; title: string; start_date: string; event_type: string; location: string | null }[];
+    events: { id: string; title: string; start_date: string; event_type: string; location: string | null }[];
+    invitations: { id: string; event_name: string; event_month: string | null; confirmed: boolean; attended: boolean; posted: boolean; ig_post_url: string | null; tt_post_url: string | null; xhs_post_url: string | null; l8_post_url: string | null }[];
+    campaigns: { id: string; campaign_name: string; status: string; spend: number; impressions: number; clicks: number; ctr: number; cpc: number; cpm: number; reach: number }[];
+    contentAll: { id: string; status: string; date: string | null; month: string }[];
   } | null>(null);
 
   const supabase = createBrowserClient();
@@ -27,21 +27,25 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
     setBrand(b);
 
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const monthStart = `${y}-${m}-01`;
+    const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+    const monthEnd = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+    const todayStr = `${y}-${m}-${String(now.getDate()).padStart(2, '0')}`;
 
     // Also get group brands for group-level data
-    const { data: groupBrands } = await supabase.from('brands').select('id').eq('brand_group', b.brand_group).eq('is_active', true);
+    const { data: groupBrands } = await supabase.from('brands').select('id').eq('brand_group', b.brand_group).eq('status', 'active');
     const groupBrandIds = (groupBrands || []).map(gb => gb.id);
 
     const [tasks, content, meetings, events, invitations, campaigns, contentAll] = await Promise.all([
       supabase.from('tasks').select('id,title,status,due_date,priority').eq('brand_id', b.id).neq('status', 'archived').order('due_date', { ascending: true, nullsFirst: false }),
-      supabase.from('content_items').select('id,title,status,post_date,month').eq('brand_id', b.id).order('post_date', { ascending: false, nullsFirst: true }).limit(50),
-      supabase.from('calendar_events').select('id,title,event_date,event_type,location').in('brand_id', groupBrandIds).gte('event_date', monthStart).lte('event_date', monthEnd).order('event_date', { ascending: true }),
-      supabase.from('calendar_events').select('id,title,event_date,event_type,location').in('brand_id', groupBrandIds).gte('event_date', now.toISOString()).order('event_date', { ascending: true }).limit(5),
-      supabase.from('influencer_invitations').select('id,event_name,attendance_status,ig_post_url,tt_post_url,xhs_post_url').eq('brand_id', b.id),
-      supabase.from('ad_campaigns').select('id,name,status,spend,impressions,clicks').eq('brand_id', b.id),
-      supabase.from('content_items').select('id,status,post_date').eq('brand_id', b.id),
+      supabase.from('content_items').select('id,title,status,date,month').eq('brand_id', b.id).order('date', { ascending: false, nullsFirst: true }).limit(50),
+      supabase.from('calendar_events').select('id,title,start_date,event_type,location').in('brand_id', groupBrandIds).gte('start_date', monthStart).lte('start_date', monthEnd).order('start_date', { ascending: true }),
+      supabase.from('calendar_events').select('id,title,start_date,event_type,location').in('brand_id', groupBrandIds).gte('start_date', todayStr).order('start_date', { ascending: true }).limit(5),
+      supabase.from('influencer_invitations').select('id,event_name,event_month,confirmed,attended,posted,ig_post_url,tt_post_url,xhs_post_url,l8_post_url').eq('brand_id', b.id),
+      supabase.from('ad_campaigns').select('id,campaign_name,status,spend,impressions,clicks,ctr,cpc,cpm,reach').eq('brand_id', b.id),
+      supabase.from('content_items').select('id,status,date,month').eq('brand_id', b.id),
     ]);
 
     setData({
@@ -71,9 +75,11 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
   const overdueTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) < now);
   const upcomingTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) >= now).slice(0, 5);
 
+  const currentMonthLabel = now.toLocaleString('en-US', { month: 'long' }) + ' ' + now.getFullYear();
   const thisMonthContent = data.contentAll.filter(c => {
-    if (!c.post_date) return false;
-    const d = new Date(c.post_date);
+    if (c.month === currentMonthLabel) return true;
+    if (!c.date) return false;
+    const d = new Date(c.date);
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
   });
   const postedThisMonth = thisMonthContent.filter(c => c.status === 'posted' || c.status === 'scheduled');
@@ -85,7 +91,7 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
 
   const kolTotal = data.invitations.length;
   const kolPosted = data.invitations.filter(i => i.ig_post_url || i.tt_post_url || i.xhs_post_url).length;
-  const kolAttended = data.invitations.filter(i => i.attendance_status === 'attended' || i.attendance_status === 'confirmed').length;
+  const kolAttended = data.invitations.filter(i => i.attended === true || i.confirmed === true).length;
 
   // Health Score — weighted and meaningful
   const taskScore = activeTasks.length === 0 ? 20 : Math.max(0, 20 - (overdueTasks.length * 4));
@@ -240,7 +246,7 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
           ) : (
             <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
               {data.events.map(ev => {
-                const d = new Date(ev.event_date);
+                const d = new Date(ev.start_date);
                 const isToday = d.toDateString() === now.toDateString();
                 const typeEmoji = ev.event_type === 'shoot' ? '📸' : ev.event_type === 'meeting' ? '🤝' : ev.event_type === 'event' ? '🎉' : '📅';
                 return (
@@ -270,9 +276,9 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
         <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><FileText size={16} />Content Pipeline</h2>
         <div className="bg-white rounded-lg border border-gray-200 p-3">
           {(() => {
-            const statuses = ['draft', 'in_review', 'approved', 'scheduled', 'posted'];
-            const statusLabels: Record<string, string> = { draft: 'Draft', in_review: 'In Review', approved: 'Approved', scheduled: 'Scheduled', posted: 'Posted' };
-            const statusColors: Record<string, string> = { draft: 'bg-gray-200', in_review: 'bg-amber-300', approved: 'bg-blue-300', scheduled: 'bg-purple-300', posted: 'bg-green-400' };
+            const statuses = ['idea', 'planned', 'in_progress', 'review', 'approved', 'scheduled', 'posted'];
+            const statusLabels: Record<string, string> = { idea: 'Idea', planned: 'Planned', in_progress: 'In Progress', review: 'Review', approved: 'Approved', scheduled: 'Scheduled', posted: 'Posted' };
+            const statusColors: Record<string, string> = { idea: 'bg-gray-200', planned: 'bg-gray-300', in_progress: 'bg-amber-300', review: 'bg-orange-300', approved: 'bg-blue-300', scheduled: 'bg-purple-300', posted: 'bg-green-400' };
             const counts = statuses.map(s => ({ status: s, count: data.contentAll.filter(c => c.status === s).length }));
             const total = data.contentAll.length || 1;
             return (
