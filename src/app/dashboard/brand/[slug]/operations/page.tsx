@@ -142,7 +142,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
       script.onload = () => {
         const lib = (window as any).pdfjsLib;
-        lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        lib.GlobalWorkerOptions.workerSrc = ''; // Disable worker for reliability
         resolve(lib);
       };
       script.onerror = () => reject(new Error('Failed to load PDF parser'));
@@ -318,7 +318,12 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
-        processed = aiResultToHtml(aiData);
+        if (aiData.html) {
+          // AI returned HTML directly — use it
+          processed = { html: aiData.html, actionItemCount: aiData.actionItemCount || 0 };
+        } else {
+          processed = aiResultToHtml(aiData);
+        }
         // Use server-extracted text as the raw transcript (more complete than client-side)
         if (aiData.extractedText) serverExtractedText = aiData.extractedText;
       } else {
@@ -377,7 +382,11 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
-        processed = aiResultToHtml(aiData);
+        if (aiData.html) {
+          processed = { html: aiData.html, actionItemCount: aiData.actionItemCount || 0 };
+        } else {
+          processed = aiResultToHtml(aiData);
+        }
       } else {
         processed = processTranscriptBasic(selectedMeeting.transcript_raw);
       }
