@@ -41,9 +41,9 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
     const [tasks, content, meetings, events, invitations, campaigns, contentAll] = await Promise.all([
       supabase.from('tasks').select('id,title,status,due_date,priority').eq('brand_id', b.id).neq('status', 'archived').order('due_date', { ascending: true, nullsFirst: false }),
       supabase.from('content_items').select('id,title,status,date,month').eq('brand_id', b.id).order('date', { ascending: false, nullsFirst: true }).limit(50),
-      supabase.from('calendar_events').select('id,title,start_date,event_type,location').in('brand_id', groupBrandIds).gte('start_date', monthStart).lte('start_date', monthEnd).order('start_date', { ascending: true }),
+      supabase.from('calendar_events').select('id,title,start_date,event_type,location').eq('brand_id', b.id).gte('start_date', monthStart).lte('start_date', monthEnd).order('start_date', { ascending: true }),
       supabase.from('calendar_events').select('id,title,start_date,event_type,location').in('brand_id', groupBrandIds).gte('start_date', todayStr).order('start_date', { ascending: true }).limit(5),
-      supabase.from('influencer_invitations').select('id,event_name,event_month,confirmed,attended,posted,ig_post_url,tt_post_url,xhs_post_url,l8_post_url').eq('brand_id', b.id),
+      supabase.from('influencer_invitations').select('id,event_name,event_month,confirmed,attended,posted,ig_post_url,tt_post_url,xhs_post_url,l8_post_url').eq('brand_id', b.id).gte('event_month', monthStart).lte('event_month', monthEnd),
       supabase.from('ad_campaigns').select('id,campaign_name,status,spend,impressions,clicks,ctr,cpc,cpm,reach').eq('brand_id', b.id),
       supabase.from('content_items').select('id,status,date,month').eq('brand_id', b.id),
     ]);
