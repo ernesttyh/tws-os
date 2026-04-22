@@ -900,7 +900,7 @@ function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; 
   );
 }
 
-: { brandId: string | null; meetings: Meeting[]; tasks: Task[] }) {
+function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; meetings: Meeting[]; tasks: Task[] }) {
   const now = new Date();
   const thisMonth = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   const thisMonthMeetings = meetings.filter(m => { const d = new Date(m.meeting_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });
