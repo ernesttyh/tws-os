@@ -309,6 +309,8 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       const formData = new FormData();
       if (rawFile) {
         formData.append('file', rawFile);
+        // Also send client-extracted text as fallback in case server PDF extraction fails
+        formData.append('transcript', rawText);
       } else {
         formData.append('transcript', rawText);
       }

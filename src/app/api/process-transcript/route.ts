@@ -1,29 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { extractText } from 'unpdf';
 
 export const maxDuration = 60;
-
-async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
-  // Dynamic import to avoid build issues
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  
-  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-  const lines: string[] = [];
-  
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const textContent = await page.getTextContent();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pageText = textContent.items
-      .filter((item: any) => 'str' in item)
-      .map((item: any) => item.str || '')
-      .join(' ');
-    if (pageText.trim()) {
-      lines.push(pageText.trim());
-    }
-  }
-  
-  return lines.join('\n');
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,25 +14,32 @@ export async function POST(request: NextRequest) {
       const textContent = formData.get('transcript') as string | null;
       const file = formData.get('file') as File | null;
       
-      // For PDFs, always try server-side extraction first
-      if (file && file.name.endsWith('.pdf')) {
+      // For PDFs, try server-side extraction (much more reliable than client-side)
+      if (file && file.name.toLowerCase().endsWith('.pdf')) {
         try {
           const buffer = await file.arrayBuffer();
-          transcript = await extractTextFromPDF(buffer);
-          console.log(`Server-side PDF extraction: ${transcript.length} chars, ${transcript.split('\n').length} lines`);
+          const { text: pdfPages } = await extractText(new Uint8Array(buffer));
+          // unpdf returns text as string[] (one per page) — join them
+          const pdfText = Array.isArray(pdfPages) ? pdfPages.join('\n') : String(pdfPages);
+          if (pdfText && pdfText.trim().length > 50) {
+            transcript = pdfText;
+            console.log(`Server-side PDF extraction: ${transcript.length} chars`);
+          }
         } catch (pdfError) {
           console.error('Server-side PDF extraction failed:', pdfError);
-          // Fall back to client-extracted text
-          if (textContent && textContent.trim().length > 50) {
-            transcript = textContent;
-          }
         }
-      } else if (textContent && textContent.trim().length > 10) {
-        transcript = textContent;
-      } else if (file) {
-        // .txt files — read as text
-        const buffer = await file.arrayBuffer();
-        transcript = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+      }
+      
+      // Fall back to client-sent text if server extraction failed or wasn't applicable
+      if (!transcript || transcript.trim().length < 50) {
+        if (textContent && textContent.trim().length > 50) {
+          transcript = textContent;
+          console.log(`Using client-sent text: ${transcript.length} chars`);
+        } else if (file && !file.name.toLowerCase().endsWith('.pdf')) {
+          // .txt files — read as text
+          const buffer = await file.arrayBuffer();
+          transcript = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+        }
       }
     } else {
       const body = await request.json();
@@ -172,7 +157,7 @@ OUTPUT MUST BE VALID HTML ONLY. No markdown, no code fences, no backticks. Start
     content = content.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
 
     // Count action items
-    const actionSection = content.match(/<h3>📌 Action Items<\/h3>\s*<ul>([\s\S]*?)<\/ul>/);
+    const actionSection = content.match(/<h3>📌 Action Items<\/h3>[\s\S]*?<ul>([\s\S]*?)<\/ul>/);
     const liCount = actionSection ? (actionSection[1].match(/<li>/g) || []).length : 0;
 
     return NextResponse.json({
