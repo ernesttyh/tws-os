@@ -62,8 +62,14 @@ Guidelines:
     if (!response.ok) {
       const errText = await response.text();
       console.error('OpenAI API error:', response.status, errText);
+      // Parse OpenAI error for user-friendly message
+      let detail = '';
+      try {
+        const errJson = JSON.parse(errText);
+        detail = errJson?.error?.message || errText.substring(0, 200);
+      } catch { detail = errText.substring(0, 200); }
       return NextResponse.json({ 
-        error: `AI service error (${response.status})`, 
+        error: `AI service error (${response.status}): ${detail}`, 
         fallback: true 
       }, { status: 502 });
     }
