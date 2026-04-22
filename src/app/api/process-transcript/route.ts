@@ -2,14 +2,35 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
-// Server-side PDF text extraction using pdf-parse
+// Server-side PDF text extraction using pdfjs-dist (works on Vercel serverless)
 async function extractPDFText(buffer: ArrayBuffer): Promise<string> {
   try {
-    // Dynamic import of pdf-parse
-    const pdfParse = (await import('pdf-parse')).default;
-    const dataBuffer = Buffer.from(buffer);
-    const data = await pdfParse(dataBuffer);
-    return data.text || '';
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const content = await page.getTextContent();
+      // Reconstruct text preserving line breaks based on Y position changes
+      let lastY = -1;
+      let line = '';
+      const lines: string[] = [];
+      for (const item of content.items) {
+        const textItem = item as { str: string; transform: number[] };
+        if (!textItem.str) continue;
+        const y = Math.round(textItem.transform[5]);
+        if (lastY !== -1 && Math.abs(y - lastY) > 2) {
+          if (line.trim()) lines.push(line.trim());
+          line = textItem.str;
+        } else {
+          line += (line && !line.endsWith(' ') ? ' ' : '') + textItem.str;
+        }
+        lastY = y;
+      }
+      if (line.trim()) lines.push(line.trim());
+      pages.push(lines.join('\n'));
+    }
+    return pages.join('\n\n');
   } catch (e) {
     console.error('PDF parse error:', e);
     return '';
@@ -30,8 +51,12 @@ export async function POST(request: NextRequest) {
       
       if (file) {
         const buffer = await file.arrayBuffer();
-        if (file.name.endsWith('.pdf')) {
+        if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
           transcript = await extractPDFText(buffer);
+          if (!transcript.trim()) {
+            // Fallback: try reading as text
+            transcript = new TextDecoder().decode(buffer);
+          }
         } else {
           transcript = new TextDecoder().decode(buffer);
         }
@@ -45,7 +70,7 @@ export async function POST(request: NextRequest) {
     }
     
     if (!transcript || transcript.trim().length < 50) {
-      return NextResponse.json({ error: 'Transcript too short or empty' }, { status: 400 });
+      return NextResponse.json({ error: 'Transcript too short or empty. Extracted: ' + transcript.length + ' chars' }, { status: 400 });
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
