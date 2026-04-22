@@ -266,7 +266,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     if (inList) result += '</ul>';
     
     // Convert action items section to task list
-    const actionSection = result.match(/<h[23]>📌 Action Items<\/h[23]>(.*?)(?=<h[23]>|$)/s);
+    const actionSection = result.match(/<h[23]>📌 Action Items<\/h[23]>([\s\S]*?)(?=<h[23]>|$)/);
     if (actionSection) {
       let taskHtml = actionSection[0];
       // Replace the regular ul/li with taskList items
