@@ -1,15 +1,23 @@
 'use client';
 import { useState, useEffect, useCallback, use } from 'react';
 import { createBrowserClient } from '@/lib/supabase/client';
-import { BarChart3, FileText, CheckSquare, Camera, Users, Palette, Calendar, TrendingUp, AlertTriangle, Target } from 'lucide-react';
+import { BarChart3, FileText, CheckSquare, Camera, Users, Calendar, TrendingUp, AlertTriangle, Target, Clock, ArrowRight, Megaphone, DollarSign, Eye, MousePointerClick, ChevronRight } from 'lucide-react';
 
-interface BrandStats { tasks: { total: number; done: number; overdue: number }; content: { total: number; posted: number }; meetings: number; shoots: number; influencers: number; ads: number; designs: number; events: number }
+interface Brand { id: string; name: string; slug: string; brand_group: string }
 
 export default function BrandOverview({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const [brand, setBrand] = useState<{ id: string; name: string; brand_group: string } | null>(null);
-  const [stats, setStats] = useState<BrandStats | null>(null);
+  const [brand, setBrand] = useState<Brand | null>(null);
   const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<{
+    tasks: { id: string; title: string; status: string; due_date: string | null; priority: string }[];
+    content: { id: string; title: string; status: string; post_date: string | null; month: string | null }[];
+    meetings: { id: string; title: string; meeting_date: string }[];
+    events: { id: string; title: string; event_date: string; event_type: string; location: string | null }[];
+    invitations: { id: string; event_name: string; attendance_status: string; ig_post_url: string | null; tt_post_url: string | null; xhs_post_url: string | null }[];
+    campaigns: { id: string; name: string; status: string; spend: number; impressions: number; clicks: number }[];
+    contentAll: { id: string; status: string; post_date: string | null }[];
+  } | null>(null);
 
   const supabase = createBrowserClient();
 
@@ -19,89 +27,310 @@ export default function BrandOverview({ params }: { params: Promise<{ slug: stri
     setBrand(b);
 
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
 
-    const [tasks, content, meetings, shoots, influencers, ads, designs, events] = await Promise.all([
-      supabase.from('tasks').select('id,status,due_date').eq('brand_id', b.id),
-      supabase.from('content_items').select('id,status').eq('brand_id', b.id),
-      supabase.from('meeting_minutes').select('id').eq('brand_id', b.id).gte('meeting_date', monthStart),
-      supabase.from('shoot_briefs').select('id').eq('brand_id', b.id),
-      supabase.from('brand_influencer_campaigns').select('id').eq('brand_id', b.id),
-      supabase.from('ad_campaigns').select('id').eq('brand_id', b.id).eq('status', 'active'),
-      supabase.from('design_briefs').select('id').eq('brand_id', b.id),
-      supabase.from('calendar_events').select('id').eq('brand_id', b.id),
+    // Also get group brands for group-level data
+    const { data: groupBrands } = await supabase.from('brands').select('id').eq('brand_group', b.brand_group).eq('is_active', true);
+    const groupBrandIds = (groupBrands || []).map(gb => gb.id);
+
+    const [tasks, content, meetings, events, invitations, campaigns, contentAll] = await Promise.all([
+      supabase.from('tasks').select('id,title,status,due_date,priority').eq('brand_id', b.id).neq('status', 'archived').order('due_date', { ascending: true, nullsFirst: false }),
+      supabase.from('content_items').select('id,title,status,post_date,month').eq('brand_id', b.id).order('post_date', { ascending: false, nullsFirst: true }).limit(50),
+      supabase.from('calendar_events').select('id,title,event_date,event_type,location').in('brand_id', groupBrandIds).gte('event_date', monthStart).lte('event_date', monthEnd).order('event_date', { ascending: true }),
+      supabase.from('calendar_events').select('id,title,event_date,event_type,location').in('brand_id', groupBrandIds).gte('event_date', now.toISOString()).order('event_date', { ascending: true }).limit(5),
+      supabase.from('influencer_invitations').select('id,event_name,attendance_status,ig_post_url,tt_post_url,xhs_post_url').eq('brand_id', b.id),
+      supabase.from('ad_campaigns').select('id,name,status,spend,impressions,clicks').eq('brand_id', b.id),
+      supabase.from('content_items').select('id,status,post_date').eq('brand_id', b.id),
     ]);
 
-    const taskList = tasks.data || [];
-    const overdue = taskList.filter(t => t.due_date && new Date(t.due_date) < now && t.status !== 'done' && t.status !== 'archived');
-
-    setStats({
-      tasks: { total: taskList.length, done: taskList.filter(t => t.status === 'done').length, overdue: overdue.length },
-      content: { total: (content.data || []).length, posted: (content.data || []).filter(c => c.status === 'posted').length },
-      meetings: (meetings.data || []).length,
-      shoots: (shoots.data || []).length,
-      influencers: (influencers.data || []).length,
-      ads: (ads.data || []).length,
-      designs: (designs.data || []).length,
-      events: (events.data || []).length,
+    setData({
+      tasks: tasks.data || [],
+      content: content.data || [],
+      meetings: (meetings.data || []).filter(m => m.event_type === 'meeting' || m.title?.toLowerCase().includes('meeting') || m.title?.toLowerCase().includes('workplan')),
+      events: events.data || [],
+      invitations: invitations.data || [],
+      campaigns: campaigns.data || [],
+      contentAll: contentAll.data || [],
     });
     setLoading(false);
   }, [slug, supabase]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  if (loading || !stats) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-24 sm:h-32 bg-gray-50 rounded-xl" /><div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="h-20 sm:h-24 bg-gray-50 rounded-xl" />)}</div></div></div>;
+  if (loading || !data || !brand) return (
+    <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4">
+      <div className="h-28 bg-gray-100 rounded-xl" />
+      <div className="grid grid-cols-2 gap-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-20 bg-gray-100 rounded-xl" />)}</div>
+    </div></div>
+  );
 
-  const modules = [
-    { label: 'Tasks', icon: CheckSquare, value: `${stats.tasks.done}/${stats.tasks.total}`, sub: stats.tasks.overdue > 0 ? `${stats.tasks.overdue} overdue` : 'On track', color: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400', subColor: stats.tasks.overdue > 0 ? 'text-red-400' : 'text-green-400' },
-    { label: 'Content', icon: Target, value: stats.content.total, sub: `${stats.content.posted} posted`, color: 'text-blue-400', subColor: 'text-gray-500' },
-    { label: 'Meetings', icon: FileText, value: stats.meetings, sub: 'This month', color: stats.meetings >= 2 ? 'text-green-400' : 'text-yellow-400', subColor: 'text-gray-500' },
-    { label: 'Shoots', icon: Camera, value: stats.shoots, sub: 'Scheduled', color: 'text-orange-400', subColor: 'text-gray-500' },
-    { label: 'KOL Campaigns', icon: Users, value: stats.influencers, sub: 'Total', color: 'text-pink-400', subColor: 'text-gray-500' },
-    { label: 'Active Ads', icon: BarChart3, value: stats.ads, sub: 'Running', color: stats.ads > 0 ? 'text-green-400' : 'text-gray-500', subColor: 'text-gray-500' },
-    { label: 'Design Briefs', icon: Palette, value: stats.designs, sub: 'In pipeline', color: 'text-purple-400', subColor: 'text-gray-500' },
-    { label: 'Events', icon: Calendar, value: stats.events, sub: 'Scheduled', color: 'text-cyan-400', subColor: 'text-gray-500' },
-  ];
+  const now = new Date();
+  const activeTasks = data.tasks.filter(t => t.status !== 'done');
+  const doneTasks = data.tasks.filter(t => t.status === 'done');
+  const overdueTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) < now);
+  const upcomingTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) >= now).slice(0, 5);
 
-  const healthScore = Math.min(100, Math.round(
-    (stats.tasks.overdue === 0 ? 20 : Math.max(0, 20 - stats.tasks.overdue * 5)) +
-    (stats.meetings >= 2 ? 20 : stats.meetings * 10) +
-    (stats.content.posted > 0 ? 20 : 0) +
-    (stats.ads > 0 ? 20 : 10) +
-    (stats.influencers > 0 ? 20 : 10)
-  ));
+  const thisMonthContent = data.contentAll.filter(c => {
+    if (!c.post_date) return false;
+    const d = new Date(c.post_date);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  });
+  const postedThisMonth = thisMonthContent.filter(c => c.status === 'posted' || c.status === 'scheduled');
 
-  const healthColor = healthScore >= 80 ? 'text-green-400' : healthScore >= 50 ? 'text-yellow-400' : 'text-red-400';
+  const meetingsThisMonth = data.meetings.length;
+  const activeCampaigns = data.campaigns.filter(c => c.status === 'active');
+  const totalAdSpend = data.campaigns.reduce((sum, c) => sum + (c.spend || 0), 0);
+  const totalImpressions = data.campaigns.reduce((sum, c) => sum + (c.impressions || 0), 0);
+
+  const kolTotal = data.invitations.length;
+  const kolPosted = data.invitations.filter(i => i.ig_post_url || i.tt_post_url || i.xhs_post_url).length;
+  const kolAttended = data.invitations.filter(i => i.attendance_status === 'attended' || i.attendance_status === 'confirmed').length;
+
+  // Health Score — weighted and meaningful
+  const taskScore = activeTasks.length === 0 ? 20 : Math.max(0, 20 - (overdueTasks.length * 4));
+  const meetingScore = meetingsThisMonth >= 2 ? 20 : meetingsThisMonth * 10;
+  const contentScore = Math.min(20, postedThisMonth.length * 2);
+  const adScore = activeCampaigns.length > 0 ? 20 : totalAdSpend > 0 ? 10 : 5;
+  const kolScore = kolTotal > 0 ? (kolPosted > 0 ? 20 : 10) : 5;
+  const healthScore = Math.min(100, taskScore + meetingScore + contentScore + adScore + kolScore);
+  const healthColor = healthScore >= 80 ? 'text-green-600' : healthScore >= 50 ? 'text-amber-500' : 'text-red-500';
+  const healthBg = healthScore >= 80 ? 'from-green-50 to-emerald-50 border-green-200' : healthScore >= 50 ? 'from-amber-50 to-yellow-50 border-amber-200' : 'from-red-50 to-pink-50 border-red-200';
+
+  const BRAND_GROUP_LABELS: Record<string, string> = {
+    neo_group: 'Neo Group', fleursophy: 'Fleursophy', deprosperoo: 'Deprosperoo', independent: 'Independent', tsim: 'TSIM', other: 'Other'
+  };
+
+  const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+  // Alerts
+  const alerts: { type: 'danger' | 'warning' | 'info'; message: string }[] = [];
+  if (overdueTasks.length > 0) alerts.push({ type: 'danger', message: `${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''} need attention` });
+  if (meetingsThisMonth === 0) alerts.push({ type: 'warning', message: `No meetings recorded this month` });
+  if (postedThisMonth.length === 0 && data.contentAll.length > 0) alerts.push({ type: 'warning', message: `No content posted this month yet` });
+  if (activeCampaigns.length === 0 && data.campaigns.length > 0) alerts.push({ type: 'info', message: `No active ad campaigns running` });
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {/* Health Banner */}
-      <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 rounded-xl p-4 sm:p-6 border border-gray-200">
-        <div className="flex items-center justify-between">
+      <div className={`bg-gradient-to-r ${healthBg} rounded-xl p-4 sm:p-5 border`}>
+        <div className="flex items-start justify-between">
           <div className="min-w-0 mr-3">
-            <h1 className="text-lg sm:text-2xl font-bold text-gray-900 truncate">{brand?.name}</h1>
-            <p className="text-xs sm:text-sm text-gray-500 mt-1 capitalize">{brand?.brand_group?.replace('_', ' ')} group</p>
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">{brand.name}</h1>
+            <p className="text-xs text-gray-500 mt-0.5">{BRAND_GROUP_LABELS[brand.brand_group] || brand.brand_group} • {monthName}</p>
           </div>
           <div className="text-right shrink-0">
             <div className={`text-3xl sm:text-4xl font-bold ${healthColor}`}>{healthScore}</div>
-            <div className="text-[10px] sm:text-xs text-gray-500">Health Score</div>
+            <div className="text-[10px] text-gray-500 font-medium">Health Score</div>
           </div>
         </div>
-        {stats.tasks.overdue > 0 && (
-          <div className="mt-3 sm:mt-4 flex items-center gap-2 text-xs sm:text-sm text-red-400"><AlertTriangle size={16} />{stats.tasks.overdue} overdue task{stats.tasks.overdue > 1 ? 's' : ''} need attention</div>
-        )}
+        {/* Score breakdown */}
+        <div className="mt-3 grid grid-cols-5 gap-1">
+          {[
+            { label: 'Tasks', score: taskScore, max: 20 },
+            { label: 'Meetings', score: meetingScore, max: 20 },
+            { label: 'Content', score: contentScore, max: 20 },
+            { label: 'Ads', score: adScore, max: 20 },
+            { label: 'KOL', score: kolScore, max: 20 },
+          ].map((item) => (
+            <div key={item.label} className="text-center">
+              <div className="w-full bg-white/60 rounded-full h-1.5 mb-1">
+                <div className={`h-1.5 rounded-full ${item.score >= item.max * 0.8 ? 'bg-green-500' : item.score >= item.max * 0.4 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${(item.score / item.max) * 100}%` }} />
+              </div>
+              <span className="text-[9px] text-gray-500">{item.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {/* Module Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-        {modules.map((m, i) => (
-          <div key={i} className="bg-gray-50 rounded-xl p-3 sm:p-4 border border-gray-200 hover:border-gray-300 transition">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-gray-500 text-[10px] sm:text-xs mb-1 sm:mb-2"><m.icon size={14} className="shrink-0" /><span className="truncate">{m.label}</span></div>
-            <div className={`text-xl sm:text-2xl font-bold ${m.color}`}>{m.value}</div>
-            <div className={`text-[10px] sm:text-xs mt-0.5 sm:mt-1 ${m.subColor}`}>{m.sub}</div>
-          </div>
-        ))}
+      {/* Alerts */}
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.map((alert, i) => (
+            <div key={i} className={`flex items-center gap-2 text-xs sm:text-sm px-3 py-2 rounded-lg ${
+              alert.type === 'danger' ? 'bg-red-50 text-red-700 border border-red-200' :
+              alert.type === 'warning' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+              'bg-blue-50 text-blue-700 border border-blue-200'
+            }`}>
+              <AlertTriangle size={14} className="shrink-0" />
+              {alert.message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Monthly Cadence — THE KEY SECTION */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><TrendingUp size={16} />Monthly Cadence</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <CadenceCard icon={Calendar} label="Meetings" value={meetingsThisMonth} target={2} sub={meetingsThisMonth >= 2 ? '✓ On track' : 'Target: 2/mo'} />
+          <CadenceCard icon={Target} label="Content Posted" value={postedThisMonth.length} target={null} sub={`${thisMonthContent.length} total this month`} />
+          <CadenceCard icon={Users} label="KOL Posts" value={kolPosted} target={null} sub={`${kolTotal} total invitations`} />
+          <CadenceCard icon={Megaphone} label="Active Ads" value={activeCampaigns.length} target={null} sub={totalAdSpend > 0 ? `$${totalAdSpend.toLocaleString()} spent` : 'No spend'} />
+        </div>
       </div>
+
+      {/* Ad Performance Quick Stats (if has ads) */}
+      {totalAdSpend > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><BarChart3 size={16} />Ad Performance</h2>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
+              <DollarSign size={14} className="mx-auto text-green-500 mb-1" />
+              <div className="text-lg font-bold text-gray-900">${totalAdSpend.toLocaleString()}</div>
+              <div className="text-[10px] text-gray-500">Total Spend</div>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
+              <Eye size={14} className="mx-auto text-blue-500 mb-1" />
+              <div className="text-lg font-bold text-gray-900">{totalImpressions >= 1000000 ? `${(totalImpressions/1000000).toFixed(1)}M` : totalImpressions >= 1000 ? `${(totalImpressions/1000).toFixed(0)}K` : totalImpressions}</div>
+              <div className="text-[10px] text-gray-500">Impressions</div>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
+              <MousePointerClick size={14} className="mx-auto text-purple-500 mb-1" />
+              <div className="text-lg font-bold text-gray-900">{data.campaigns.reduce((s, c) => s + (c.clicks || 0), 0).toLocaleString()}</div>
+              <div className="text-[10px] text-gray-500">Clicks</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Two columns: Tasks + Events */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Task Summary */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><CheckSquare size={16} />Tasks</h2>
+          <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+            <div className="p-3 flex items-center justify-between">
+              <span className="text-xs text-gray-500">Active</span>
+              <span className="text-sm font-semibold text-gray-900">{activeTasks.length}</span>
+            </div>
+            <div className="p-3 flex items-center justify-between">
+              <span className="text-xs text-gray-500">Completed</span>
+              <span className="text-sm font-semibold text-green-600">{doneTasks.length}</span>
+            </div>
+            <div className="p-3 flex items-center justify-between">
+              <span className="text-xs text-red-500 font-medium">Overdue</span>
+              <span className={`text-sm font-bold ${overdueTasks.length > 0 ? 'text-red-500' : 'text-gray-400'}`}>{overdueTasks.length}</span>
+            </div>
+            {overdueTasks.slice(0, 3).map(t => (
+              <div key={t.id} className="px-3 py-2 flex items-center justify-between text-xs">
+                <span className="text-gray-700 truncate mr-2">{t.title}</span>
+                <span className="text-red-400 shrink-0">Due {new Date(t.due_date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+              </div>
+            ))}
+            {upcomingTasks.length > 0 && (
+              <>
+                <div className="px-3 py-2 bg-gray-50 text-[10px] text-gray-400 font-medium uppercase tracking-wider">Upcoming</div>
+                {upcomingTasks.slice(0, 3).map(t => (
+                  <div key={t.id} className="px-3 py-2 flex items-center justify-between text-xs">
+                    <span className="text-gray-600 truncate mr-2">{t.title}</span>
+                    <span className="text-gray-400 shrink-0">{new Date(t.due_date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Upcoming Events */}
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><Calendar size={16} />Upcoming Events</h2>
+          {data.events.length === 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-xs text-gray-400">No upcoming events</div>
+          ) : (
+            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
+              {data.events.map(ev => {
+                const d = new Date(ev.event_date);
+                const isToday = d.toDateString() === now.toDateString();
+                const typeEmoji = ev.event_type === 'shoot' ? '📸' : ev.event_type === 'meeting' ? '🤝' : ev.event_type === 'event' ? '🎉' : '📅';
+                return (
+                  <div key={ev.id} className={`px-3 py-2.5 ${isToday ? 'bg-blue-50' : ''}`}>
+                    <div className="flex items-start justify-between">
+                      <div className="min-w-0 mr-2">
+                        <span className="text-xs font-medium text-gray-800">{typeEmoji} {ev.title}</span>
+                        {ev.location && <p className="text-[10px] text-gray-400 mt-0.5 truncate">📍 {ev.location}</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className={`text-[10px] font-medium ${isToday ? 'text-blue-600' : 'text-gray-500'}`}>
+                          {isToday ? 'TODAY' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                        </div>
+                        <div className="text-[10px] text-gray-400">{d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Content Pipeline Summary */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><FileText size={16} />Content Pipeline</h2>
+        <div className="bg-white rounded-lg border border-gray-200 p-3">
+          {(() => {
+            const statuses = ['draft', 'in_review', 'approved', 'scheduled', 'posted'];
+            const statusLabels: Record<string, string> = { draft: 'Draft', in_review: 'In Review', approved: 'Approved', scheduled: 'Scheduled', posted: 'Posted' };
+            const statusColors: Record<string, string> = { draft: 'bg-gray-200', in_review: 'bg-amber-300', approved: 'bg-blue-300', scheduled: 'bg-purple-300', posted: 'bg-green-400' };
+            const counts = statuses.map(s => ({ status: s, count: data.contentAll.filter(c => c.status === s).length }));
+            const total = data.contentAll.length || 1;
+            return (
+              <div>
+                <div className="flex rounded-full overflow-hidden h-3 mb-3">
+                  {counts.filter(c => c.count > 0).map(c => (
+                    <div key={c.status} className={`${statusColors[c.status]} transition-all`} style={{ width: `${(c.count / total) * 100}%` }} />
+                  ))}
+                  {total === 1 && data.contentAll.length === 0 && <div className="bg-gray-100 w-full" />}
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {counts.filter(c => c.count > 0).map(c => (
+                    <div key={c.status} className="flex items-center gap-1.5 text-xs">
+                      <div className={`w-2 h-2 rounded-full ${statusColors[c.status]}`} />
+                      <span className="text-gray-600">{statusLabels[c.status]}</span>
+                      <span className="font-semibold text-gray-900">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* KOL Summary (if has invitations) */}
+      {kolTotal > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2"><Users size={16} />KOL Activity</h2>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
+              <div className="text-lg font-bold text-gray-900">{kolTotal}</div>
+              <div className="text-[10px] text-gray-500">Invitations</div>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
+              <div className="text-lg font-bold text-green-600">{kolAttended}</div>
+              <div className="text-[10px] text-gray-500">Confirmed</div>
+            </div>
+            <div className="bg-white rounded-lg p-3 border border-gray-200 text-center">
+              <div className="text-lg font-bold text-purple-600">{kolPosted}</div>
+              <div className="text-[10px] text-gray-500">Posted</div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CadenceCard({ icon: Icon, label, value, target, sub }: { icon: React.ElementType; label: string; value: number; target: number | null; sub: string }) {
+  const isGood = target === null ? value > 0 : value >= target;
+  return (
+    <div className="bg-white rounded-lg p-3 border border-gray-200">
+      <div className="flex items-center gap-1.5 text-gray-500 text-[10px] sm:text-xs mb-1">
+        <Icon size={14} className="shrink-0" /><span>{label}</span>
+      </div>
+      <div className={`text-xl sm:text-2xl font-bold ${isGood ? 'text-green-600' : value === 0 ? 'text-red-400' : 'text-amber-500'}`}>{value}</div>
+      <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>
     </div>
   );
 }
