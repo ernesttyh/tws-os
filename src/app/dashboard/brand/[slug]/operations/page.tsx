@@ -200,116 +200,67 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   };
 
   // Smart transcript processor — structures raw text into organized meeting notes
-  const processTranscript = (text: string, source: string): { html: string; actionItemCount: number } => {
-    const lines = text.split('\n').filter(l => l.trim());
-    if (lines.length === 0) return { html: '<p></p>', actionItemCount: 0 };
-
-    const speakers = new Set<string>();
-    const conversations: { speaker: string; text: string; isAction: boolean }[] = [];
-    const actionItems: string[] = [];
-    const decisions: string[] = [];
-
-    const actionPatterns = [
-      /\b(?:need to|needs to|will do|should|must|have to|going to|follow up|action item|next step|deadline|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next week|end of))\b/i,
-      /\b(?:please|pls|ensure|make sure|arrange|prepare|send|submit|complete|finish|update|check with|confirm|book|schedule|set up|reach out|coordinate|draft|share)\b/i,
-    ];
-    const decisionPatterns = /\b(?:agreed|decided|confirmed|approved|let'?s go with|we'?ll go|final decision|conclusion|settled on)\b/i;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.length < 2) continue;
-
-      // Skip timestamp-only lines
-      if (/^\d{1,2}:\d{2}(:\d{2})?\s*$/.test(trimmed)) continue;
-
-      let speaker = '';
-      let msg = trimmed;
-
-      // WhatsApp format: [date, time] Sender: message
-      const waMatch = trimmed.match(/^\[?([\d/]+,?\s*[\d:]+\s*(?:AM|PM)?)\]?\s*-?\s*([^:]+):\s*(.+)/i);
-      if (waMatch) {
-        speaker = waMatch[2].trim();
-        msg = waMatch[3].trim();
-      } else {
-        // Speaker: message format
-        const spkMatch = trimmed.match(/^([A-Za-z][A-Za-z\s.]{0,28}):\s+(.+)/);
-        if (spkMatch) {
-          speaker = spkMatch[1].trim();
-          msg = spkMatch[2].trim();
-        }
-      }
-
-      if (speaker) speakers.add(speaker);
-
-      // Detect action items
-      const isAction = actionPatterns.some(p => p.test(msg));
-      if (isAction) actionItems.push(speaker ? `${speaker}: ${msg}` : msg);
-
-      // Detect decisions
-      if (decisionPatterns.test(msg)) decisions.push(speaker ? `${speaker}: ${msg}` : msg);
-
-      conversations.push({ speaker, text: msg, isAction });
-    }
-
-    // ===== Build structured HTML =====
+  // Convert AI-structured result to rich HTML for the editor
+  const aiResultToHtml = (ai: { attendees?: string[]; summary?: string[]; decisions?: string[]; actionItems?: { task: string; assignee?: string; priority?: string }[]; topics?: string[] }): { html: string; actionItemCount: number } => {
     let html = '';
-    const sourceLabel = source === 'plaud' ? 'Plaud recording' : source === 'whatsapp' ? 'WhatsApp export' : 'uploaded transcript';
-
+    
     // Header
     html += '<h2>📋 Meeting Summary</h2>';
-    html += `<p><em>Auto-processed from ${sourceLabel}. ${conversations.length} messages analyzed. Review and edit as needed.</em></p>`;
-
+    html += '<p><em>AI-processed transcript. Review and edit as needed.</em></p>';
+    
+    // Topics
+    if (ai.topics && ai.topics.length > 0) {
+      html += '<p><strong>Topics:</strong> ' + ai.topics.join(' · ') + '</p>';
+    }
+    
     // Attendees
-    if (speakers.size > 0) {
+    if (ai.attendees && ai.attendees.length > 0) {
       html += '<h3>👥 Attendees</h3>';
-      html += '<ul>' + Array.from(speakers).map(s => `<li>${s}</li>`).join('') + '</ul>';
+      html += '<ul>' + ai.attendees.map(a => `<li>${a}</li>`).join('') + '</ul>';
     }
-
-    // Discussion
-    html += '<hr/><h3>💬 Discussion</h3>';
-    if (conversations.length <= 80) {
-      html += conversations.map(c => {
-        if (c.speaker) return `<p><strong>${c.speaker}</strong>: ${c.text}</p>`;
-        return `<p>${c.text}</p>`;
-      }).join('');
-    } else {
-      // Long transcript — show beginning and end
-      html += `<p><em>${conversations.length} messages — showing key sections:</em></p>`;
-      const start = conversations.slice(0, 40);
-      const end = conversations.slice(-30);
-      html += start.map(c => c.speaker ? `<p><strong>${c.speaker}</strong>: ${c.text}</p>` : `<p>${c.text}</p>`).join('');
-      html += `<p><em>... ${conversations.length - 70} more messages ...</em></p>`;
-      html += end.map(c => c.speaker ? `<p><strong>${c.speaker}</strong>: ${c.text}</p>` : `<p>${c.text}</p>`).join('');
+    
+    // Key Points (Summary)
+    if (ai.summary && ai.summary.length > 0) {
+      html += '<hr/><h3>📝 Key Discussion Points</h3>';
+      html += '<ul>' + ai.summary.map(s => `<li>${s}</li>`).join('') + '</ul>';
     }
-
+    
     // Decisions
-    html += '<hr/><h3>✅ Decisions</h3>';
-    if (decisions.length > 0) {
-      html += '<ul>' + decisions.map(d => `<li>${d}</li>`).join('') + '</ul>';
-    } else {
-      html += '<ul><li><em>Review transcript and add key decisions here</em></li></ul>';
+    if (ai.decisions && ai.decisions.length > 0) {
+      html += '<hr/><h3>✅ Decisions Made</h3>';
+      html += '<ul>' + ai.decisions.map(d => `<li>${d}</li>`).join('') + '</ul>';
     }
-
+    
     // Action Items
-    html += '<h3>📌 Action Items</h3>';
-    if (actionItems.length > 0) {
+    html += '<hr/><h3>📌 Action Items</h3>';
+    if (ai.actionItems && ai.actionItems.length > 0) {
       html += '<ul data-type="taskList">';
-      // Deduplicate
-      const seen = new Set<string>();
-      for (const item of actionItems) {
-        const key = item.toLowerCase().replace(/^[^:]+:\s*/, '');
-        if (!seen.has(key)) {
-          seen.add(key);
-          html += `<li data-type="taskItem" data-checked="false">${item}</li>`;
-        }
+      for (const item of ai.actionItems) {
+        const assignee = item.assignee ? ` <strong>[${item.assignee}]</strong>` : '';
+        const priority = item.priority === 'high' ? ' 🔴' : item.priority === 'medium' ? ' 🟡' : '';
+        html += `<li data-type="taskItem" data-checked="false">${item.task}${assignee}${priority}</li>`;
       }
       html += '</ul>';
     } else {
       html += '<ul data-type="taskList"><li data-type="taskItem" data-checked="false">Review transcript and add action items</li></ul>';
     }
+    
+    return { html, actionItemCount: ai.actionItems?.length || 0 };
+  };
 
-    const uniqueActions = new Set(actionItems.map(a => a.toLowerCase().replace(/^[^:]+:\s*/, '')));
-    return { html, actionItemCount: uniqueActions.size };
+  // Fallback: basic text processing when AI is unavailable
+  const processTranscriptBasic = (text: string): { html: string; actionItemCount: number } => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length === 0) return { html: '<p></p>', actionItemCount: 0 };
+    let html = '<h2>📋 Meeting Notes</h2>';
+    html += '<p><em>AI processing unavailable. Raw transcript shown below — edit manually.</em></p>';
+    html += '<hr/><h3>💬 Transcript</h3>';
+    const displayLines = lines.slice(0, 80);
+    html += displayLines.map(l => `<p>${l.trim()}</p>`).join('');
+    if (lines.length > 80) html += `<p><em>... ${lines.length - 80} more lines ...</em></p>`;
+    html += '<hr/><h3>📌 Action Items</h3>';
+    html += '<ul data-type="taskList"><li data-type="taskItem" data-checked="false">Review transcript and add action items manually</li></ul>';
+    return { html, actionItemCount: 0 };
   };
 
   // Create meeting and process uploaded transcript
@@ -317,7 +268,27 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     if (!brand) return;
     setIsProcessing(true);
     const rawText = uploadedFile?.content || '';
-    const processed = processTranscript(rawText, newSource);
+    // Call AI API to process transcript
+    let processed: { html: string; actionItemCount: number };
+    try {
+      setNewTitle(newTitle || 'Processing...');
+      const aiRes = await fetch('/api/process-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: rawText, title: newTitle, source: newSource }),
+      });
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        processed = aiResultToHtml(aiData);
+      } else {
+        const errData = await aiRes.json().catch(() => ({}));
+        console.warn('AI processing failed, using basic:', errData);
+        processed = processTranscriptBasic(rawText);
+      }
+    } catch {
+      console.warn('AI API unreachable, using basic processing');
+      processed = processTranscriptBasic(rawText);
+    }
     try {
       const res = await fetch(`/api/brands/${brand.id}/meetings`, {
         method: 'POST',
@@ -353,7 +324,23 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const reprocessTranscript = async () => {
     if (!selectedMeeting?.transcript_raw || !brand) return;
     setIsProcessing(true);
-    const processed = processTranscript(selectedMeeting.transcript_raw, selectedMeeting.source);
+    // Call AI API to reprocess
+    let processed: { html: string; actionItemCount: number };
+    try {
+      const aiRes = await fetch('/api/process-transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: selectedMeeting.transcript_raw, title: selectedMeeting.title, source: selectedMeeting.source }),
+      });
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        processed = aiResultToHtml(aiData);
+      } else {
+        processed = processTranscriptBasic(selectedMeeting.transcript_raw);
+      }
+    } catch {
+      processed = processTranscriptBasic(selectedMeeting.transcript_raw);
+    }
     await handleContentChange(selectedMeeting.id, processed.html);
     setSelectedMeeting(prev => prev ? { ...prev, content: processed.html } : prev);
     setShowProcessSuccess(true);
