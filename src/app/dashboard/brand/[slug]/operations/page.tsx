@@ -57,6 +57,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const [extractedTasks, setExtractedTasks] = useState<{ title: string; selected: boolean }[]>([]);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; size: number; content: string } | null>(null);
+  const [rawFile, setRawFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showProcessSuccess, setShowProcessSuccess] = useState(false);
   const [foundActionItems, setFoundActionItems] = useState(0);
@@ -190,6 +191,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         throw new Error('Could not extract text from this file. Please try exporting as .txt instead.');
       }
       setUploadedFile({ name: file.name, size: file.size, content: text });
+      setRawFile(file);
     } catch (err) {
       console.error('Upload failed:', err);
       const msg = err instanceof Error ? err.message : 'Failed to read file';
@@ -201,51 +203,73 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
 
   // Smart transcript processor — structures raw text into organized meeting notes
   // Convert AI-structured result to rich HTML for the editor
-  const aiResultToHtml = (ai: { attendees?: string[]; summary?: string[]; decisions?: string[]; actionItems?: { task: string; assignee?: string; priority?: string }[]; topics?: string[] }): { html: string; actionItemCount: number } => {
-    let html = '';
+  // Convert AI markdown response to rich HTML for TipTap editor
+  const aiResultToHtml = (aiData: { formattedContent?: string; actionItems?: { task: string; assignee?: string | null; priority?: string }[]; raw_ai_response?: string }): { html: string; actionItemCount: number } => {
+    const md = aiData.formattedContent || aiData.raw_ai_response || '';
+    if (!md.trim()) return { html: '<p>AI returned empty response</p>', actionItemCount: 0 };
     
-    // Header
-    html += '<h2>📋 Meeting Summary</h2>';
-    html += '<p><em>AI-processed transcript. Review and edit as needed.</em></p>';
+    // Convert markdown to HTML
+    let html = md
+      // Headers
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      // Bold
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Italic
+      .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
+      // Horizontal rules
+      .replace(/^---$/gm, '<hr/>')
+      // Bullet lists with sub-bullets (indented with 2+ spaces)
+      .replace(/^  - (.+)$/gm, '@@SUB@@$1@@/SUB@@')
+      .replace(/^- (.+)$/gm, '@@LI@@$1@@/LI@@');
     
-    // Topics
-    if (ai.topics && ai.topics.length > 0) {
-      html += '<p><strong>Topics:</strong> ' + ai.topics.join(' · ') + '</p>';
-    }
+    // Process list items and sub-items into proper HTML
+    const lines = html.split('\n');
+    let result = '';
+    let inList = false;
+    let inSubList = false;
     
-    // Attendees
-    if (ai.attendees && ai.attendees.length > 0) {
-      html += '<h3>👥 Attendees</h3>';
-      html += '<ul>' + ai.attendees.map(a => `<li>${a}</li>`).join('') + '</ul>';
-    }
-    
-    // Key Points (Summary)
-    if (ai.summary && ai.summary.length > 0) {
-      html += '<hr/><h3>📝 Key Discussion Points</h3>';
-      html += '<ul>' + ai.summary.map(s => `<li>${s}</li>`).join('') + '</ul>';
-    }
-    
-    // Decisions
-    if (ai.decisions && ai.decisions.length > 0) {
-      html += '<hr/><h3>✅ Decisions Made</h3>';
-      html += '<ul>' + ai.decisions.map(d => `<li>${d}</li>`).join('') + '</ul>';
-    }
-    
-    // Action Items
-    html += '<hr/><h3>📌 Action Items</h3>';
-    if (ai.actionItems && ai.actionItems.length > 0) {
-      html += '<ul data-type="taskList">';
-      for (const item of ai.actionItems) {
-        const assignee = item.assignee ? ` <strong>[${item.assignee}]</strong>` : '';
-        const priority = item.priority === 'high' ? ' 🔴' : item.priority === 'medium' ? ' 🟡' : '';
-        html += `<li data-type="taskItem" data-checked="false">${item.task}${assignee}${priority}</li>`;
+    for (const line of lines) {
+      if (line.includes('@@LI@@')) {
+        if (inSubList) { result += '</ul>'; inSubList = false; }
+        if (!inList) { result += '<ul>'; inList = true; }
+        result += '<li>' + line.replace(/@@LI@@(.+)@@\/LI@@/, '$1') + '</li>';
+      } else if (line.includes('@@SUB@@')) {
+        if (!inSubList) { result += '<ul>'; inSubList = true; }
+        result += '<li>' + line.replace(/@@SUB@@(.+)@@\/SUB@@/, '$1') + '</li>';
+      } else {
+        if (inSubList) { result += '</ul>'; inSubList = false; }
+        if (inList) { result += '</ul>'; inList = false; }
+        // Handle action items specially — make them task list items
+        if (line.includes('📌 Action Items')) {
+          result += line;
+          // Start a task list after this heading
+        } else if (line.trim() === '') {
+          result += '';
+        } else if (!line.startsWith('<h') && !line.startsWith('<hr') && !line.startsWith('<ul') && !line.startsWith('<li') && line.trim()) {
+          result += '<p>' + line + '</p>';
+        } else {
+          result += line;
+        }
       }
-      html += '</ul>';
-    } else {
-      html += '<ul data-type="taskList"><li data-type="taskItem" data-checked="false">Review transcript and add action items</li></ul>';
+    }
+    if (inSubList) result += '</ul>';
+    if (inList) result += '</ul>';
+    
+    // Convert action items section to task list
+    const actionSection = result.match(/<h[23]>📌 Action Items<\/h[23]>(.*?)(?=<h[23]>|$)/s);
+    if (actionSection) {
+      let taskHtml = actionSection[0];
+      // Replace the regular ul/li with taskList items
+      taskHtml = taskHtml.replace(/<ul>/, '<ul data-type="taskList">');
+      taskHtml = taskHtml.replace(/<li>/g, '<li data-type="taskItem" data-checked="false">');
+      result = result.replace(actionSection[0], taskHtml);
     }
     
-    return { html, actionItemCount: ai.actionItems?.length || 0 };
+    // Add header
+    result = '<p><em>AI-processed transcript. Review and edit as needed.</em></p>' + result;
+    
+    return { html: result, actionItemCount: aiData.actionItems?.length || 0 };
   };
 
   // Fallback: basic text processing when AI is unavailable
@@ -268,25 +292,34 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     if (!brand) return;
     setIsProcessing(true);
     const rawText = uploadedFile?.content || '';
-    // Call AI API to process transcript
+    // Send raw file to server for proper extraction + AI processing
     let processed: { html: string; actionItemCount: number };
+    let serverExtractedText = rawText;
     try {
       setNewTitle(newTitle || 'Processing...');
+      const formData = new FormData();
+      if (rawFile) {
+        formData.append('file', rawFile);
+      } else {
+        formData.append('transcript', rawText);
+      }
       const aiRes = await fetch('/api/process-transcript', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: rawText, title: newTitle, source: newSource }),
+        body: formData,
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
         processed = aiResultToHtml(aiData);
+        // Use server-extracted text as the raw transcript (more complete than client-side)
+        if (aiData.extractedText) serverExtractedText = aiData.extractedText;
       } else {
         const errData = await aiRes.json().catch(() => ({}));
-        console.warn('AI processing failed, using basic:', errData);
+        console.warn('AI processing failed:', errData);
+        alert(`⚠️ AI processing failed: ${errData.error || 'Unknown error'}. Falling back to basic view.`);
         processed = processTranscriptBasic(rawText);
       }
-    } catch {
-      console.warn('AI API unreachable, using basic processing');
+    } catch (err) {
+      console.warn('AI API unreachable, using basic processing:', err);
       processed = processTranscriptBasic(rawText);
     }
     try {
@@ -298,7 +331,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
           meeting_date: newDate,
           meeting_type: newType,
           source: newSource,
-          transcript_raw: rawText,
+          transcript_raw: serverExtractedText || rawText,
           content: processed.html,
         }),
       });
@@ -307,7 +340,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
         setMeetings(prev => [meeting, ...prev]);
         setSelectedMeeting(meeting);
         setIsNewMeeting(false);
-        setUploadedFile(null);
+        setUploadedFile(null); setRawFile(null);
         setNewTitle('');
         setShowProcessSuccess(true);
         setFoundActionItems(processed.actionItemCount);
@@ -327,10 +360,11 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     // Call AI API to reprocess
     let processed: { html: string; actionItemCount: number };
     try {
+      const formData = new FormData();
+      formData.append('transcript', selectedMeeting.transcript_raw);
       const aiRes = await fetch('/api/process-transcript', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: selectedMeeting.transcript_raw, title: selectedMeeting.title, source: selectedMeeting.source }),
+        body: formData,
       });
       if (aiRes.ok) {
         const aiData = await aiRes.json();
@@ -611,7 +645,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       {tab === 'meetings' && isNewMeeting && !selectedMeeting && (
         <div className="space-y-4 animate-fade-in">
           <div className="flex items-center gap-3">
-            <button onClick={() => { setIsNewMeeting(false); setUploadedFile(null); }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition">
+            <button onClick={() => { setIsNewMeeting(false); setUploadedFile(null); setRawFile(null); }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-900 transition">
               <ArrowLeft size={18} />
             </button>
             <h2 className="text-base sm:text-lg font-semibold text-gray-900">New Meeting Note</h2>
@@ -621,7 +655,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="Date" name="meeting_date" type="date" value={newDate} onChange={e => setNewDate(e.target.value)} required />
               <FormField label="Type" name="meeting_type" value={newType} onChange={e => setNewType(e.target.value)} options={[{ value: 'workplan', label: '📋 Workplan' }, { value: 'review', label: '🔍 Review' }, { value: 'brainstorm', label: '💡 Brainstorm' }, { value: 'adhoc', label: '⚡ Ad-hoc' }]} />
-              <FormField label="Source" name="source" value={newSource} onChange={e => { setNewSource(e.target.value); setUploadedFile(null); }} options={[{ value: 'manual', label: '✍️ Type Manually' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }, { value: 'transcript', label: '📄 Upload Transcript' }]} />
+              <FormField label="Source" name="source" value={newSource} onChange={e => { setNewSource(e.target.value); setUploadedFile(null); setRawFile(null); }} options={[{ value: 'manual', label: '✍️ Type Manually' }, { value: 'plaud', label: '🎙️ Plaud Transcript' }, { value: 'whatsapp', label: '💬 WhatsApp Export' }, { value: 'transcript', label: '📄 Upload Transcript' }]} />
             </div>
 
             {/* File upload section for non-manual sources */}
@@ -687,7 +721,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             )}
 
             <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => { setIsNewMeeting(false); setUploadedFile(null); }} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition">Cancel</button>
+              <button onClick={() => { setIsNewMeeting(false); setUploadedFile(null); setRawFile(null); }} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900 transition">Cancel</button>
               {newSource === 'manual' ? (
                 <button onClick={createMeeting} disabled={!newTitle.trim()} className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white text-sm rounded-lg transition flex items-center gap-2">
                   <FileText size={14} /> Create & Start Writing

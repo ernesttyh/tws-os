@@ -1,45 +1,63 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function POST(req: NextRequest) {
+export const maxDuration = 60;
+
+// Server-side PDF text extraction using pdf-parse
+async function extractPDFText(buffer: ArrayBuffer): Promise<string> {
   try {
-    const { transcript, title, source } = await req.json();
+    // Dynamic import of pdf-parse
+    const pdfParse = (await import('pdf-parse')).default;
+    const dataBuffer = Buffer.from(buffer);
+    const data = await pdfParse(dataBuffer);
+    return data.text || '';
+  } catch (e) {
+    console.error('PDF parse error:', e);
+    return '';
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const contentType = request.headers.get('content-type') || '';
     
-    if (!transcript || transcript.trim().length < 20) {
+    let transcript = '';
+    
+    // Handle multipart form data (file upload)
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await request.formData();
+      const file = formData.get('file') as File | null;
+      const textContent = formData.get('transcript') as string | null;
+      
+      if (file) {
+        const buffer = await file.arrayBuffer();
+        if (file.name.endsWith('.pdf')) {
+          transcript = await extractPDFText(buffer);
+        } else {
+          transcript = new TextDecoder().decode(buffer);
+        }
+      } else if (textContent) {
+        transcript = textContent;
+      }
+    } else {
+      // Handle JSON body (text already extracted by client)
+      const body = await request.json();
+      transcript = body.transcript || '';
+    }
+    
+    if (!transcript || transcript.trim().length < 50) {
       return NextResponse.json({ error: 'Transcript too short or empty' }, { status: 400 });
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'AI processing not configured. Add OPENAI_API_KEY to environment.', fallback: true }, { status: 503 });
+      return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
     }
 
-    // Truncate to ~15000 chars for GPT-4o-mini (fits in 128K context easily)
-    const truncated = transcript.length > 15000 ? transcript.slice(0, 15000) + '\n\n[... transcript truncated ...]' : transcript;
-
-    const systemPrompt = `You are an AI assistant that processes meeting transcripts for TWS Branding, a food & beverage marketing agency in Singapore.
-
-Analyze the raw transcript and produce a structured meeting summary as JSON.
-
-Return EXACTLY this JSON structure:
-{
-  "attendees": ["Name 1", "Name 2"],
-  "summary": ["Key discussion point 1", "Key discussion point 2"],
-  "decisions": ["Decision 1", "Decision 2"],
-  "actionItems": [
-    { "task": "Clear description of what needs to be done", "assignee": "Person name or null", "priority": "high|medium|low" }
-  ],
-  "topics": ["Main Topic 1", "Main Topic 2"]
-}
-
-Guidelines:
-- **summary**: 5-12 concise bullet points capturing the MOST IMPORTANT discussion points. Focus on business decisions, strategy changes, deadlines, and updates.
-- **actionItems**: Extract REAL action items — concrete tasks someone needs to do (not just discussion points). Include who should do it if mentioned. Mark urgent/deadline items as "high" priority.
-- **attendees**: Extract names of people who spoke or were referenced as present. Use the name as spoken (e.g., "Ernest", "Linden").
-- **decisions**: Firm agreements, confirmations, or conclusions reached during the meeting.
-- **topics**: 2-6 high-level topic labels for the meeting.
-- Keep each bullet point to 1-2 sentences max.
-- The transcript may contain English, Mandarin (Chinese), or Singlish. Summarize everything in English but keep brand names, dish names, and local terms as-is.
-- If the transcript quality is poor (speech-to-text errors), do your best to interpret the meaning.`;
+    // Truncate very long transcripts to stay within token limits
+    const maxChars = 50000;
+    const truncatedTranscript = transcript.length > maxChars 
+      ? transcript.substring(0, maxChars) + '\n\n[Transcript truncated due to length]'
+      : transcript;
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -49,51 +67,145 @@ Guidelines:
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
+        temperature: 0.3,
+        max_tokens: 4000,
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Meeting: "${title || 'Untitled Meeting'}"\nSource: ${source || 'transcript'}\n\nRaw Transcript:\n${truncated}` }
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.2,
-        max_tokens: 2000,
+          {
+            role: 'system',
+            content: `You are a meeting notes assistant for TWS Branding, an F&B marketing agency managing restaurant brands in Singapore. Your job is to produce COMPREHENSIVE, DETAILED meeting notes from transcripts.
+
+CRITICAL RULES:
+- Be THOROUGH. Capture EVERY distinct topic, decision, and action item discussed. Do NOT over-summarize.
+- The transcript may be bilingual (English + Mandarin Chinese). Process BOTH languages.
+- Attendee names: extract real names mentioned (not brand names). If someone is referred to by role only, note the role.
+- Discussion points: Create a bullet for EVERY separate topic discussed. Group related sub-points under the main topic. Include specific details (dates, numbers, names, locations, amounts).
+- For each discussion topic, include 2-4 sub-bullets with the specific details discussed.
+- Action items: Extract EVERY task, to-do, follow-up, or commitment mentioned. Be specific about what needs to be done.
+
+OUTPUT FORMAT (use this exact structure):
+
+## 📋 Meeting Summary
+
+**Topics:** [List all major topics separated by · ]
+
+## 👥 Attendees
+- [Name 1] — [role if mentioned]
+- [Name 2] — [role if mentioned]
+
+## 📝 Key Discussion Points
+
+### [Topic 1 Title]
+- [Main point with specific detail]
+  - [Sub-detail: dates, numbers, decisions]
+  - [Sub-detail: who said what, context]
+
+### [Topic 2 Title]
+- [Main point]
+  - [Sub-detail]
+
+[Continue for ALL topics discussed...]
+
+## ✅ Decisions Made
+- [Decision 1 — with context on why]
+- [Decision 2 — with context on why]
+- [Continue for ALL decisions...]
+
+## 📌 Action Items
+- [Specific task description] → **[Person responsible]** — [Deadline if mentioned] 🔴
+- [Specific task description] → **[Person responsible]** — [Deadline if mentioned] 🟡
+- [Task with no clear owner] → **TBD** 🟡
+
+Priority: 🔴 = urgent/this week, 🟡 = medium/next week, 🟢 = low/no rush
+
+## 💡 Notes & Context
+- [Any important context, concerns raised, or things to watch]
+- [Follow-up items that aren't tasks but need attention]
+
+IMPORTANT: A 30-minute meeting typically has 15-25 discussion bullets across 5-8 topics, 3-8 decisions, and 5-15 action items. If your output has fewer, you are missing details. Go back and re-read the transcript.`
+          },
+          {
+            role: 'user',
+            content: `Process this meeting transcript into comprehensive, detailed meeting notes. Capture EVERY topic discussed, every decision made, and every action item or follow-up mentioned. Do not skip anything.\n\n---\n\n${truncatedTranscript}`
+          }
+        ]
       }),
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      console.error('OpenAI API error:', response.status, errText);
-      // Parse OpenAI error for user-friendly message
-      let detail = '';
-      try {
-        const errJson = JSON.parse(errText);
-        detail = errJson?.error?.message || errText.substring(0, 200);
-      } catch { detail = errText.substring(0, 200); }
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = (errorData as Record<string, unknown>)?.error 
+        ? ((errorData as Record<string, { message?: string }>).error?.message || JSON.stringify((errorData as Record<string, unknown>).error))
+        : `OpenAI API error: ${response.status}`;
+      console.error('OpenAI error:', errorMessage);
       return NextResponse.json({ 
-        error: `AI service error (${response.status}): ${detail}`, 
-        fallback: true 
+        error: `AI processing failed: ${errorMessage}` 
       }, { status: 502 });
     }
 
     const data = await response.json();
     const content = data.choices?.[0]?.message?.content;
-    
+
     if (!content) {
-      return NextResponse.json({ error: 'AI returned empty response', fallback: true }, { status: 502 });
+      return NextResponse.json({ error: 'No content returned from AI' }, { status: 500 });
     }
 
-    const result = JSON.parse(content);
-    
-    // Validate structure
+    // Parse the structured response
+    const sections = parseAIResponse(content);
+
     return NextResponse.json({
-      attendees: Array.isArray(result.attendees) ? result.attendees : [],
-      summary: Array.isArray(result.summary) ? result.summary : [],
-      decisions: Array.isArray(result.decisions) ? result.decisions : [],
-      actionItems: Array.isArray(result.actionItems) ? result.actionItems : [],
-      topics: Array.isArray(result.topics) ? result.topics : [],
+      success: true,
+      raw_ai_response: content,
+      extractedText: transcript,
+      ...sections
     });
-  } catch (err: unknown) {
-    console.error('Process transcript error:', err);
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return NextResponse.json({ error: message, fallback: true }, { status: 500 });
+
+  } catch (error) {
+    console.error('Process transcript error:', error);
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : 'Unknown error processing transcript' 
+    }, { status: 500 });
   }
+}
+
+function parseAIResponse(content: string) {
+  // Extract attendees
+  const attendeeSection = content.match(/## 👥 Attendees\n([\s\S]*?)(?=\n## )/);
+  const attendees = attendeeSection 
+    ? attendeeSection[1].match(/- .+/g)?.map(a => a.replace(/^- /, '').trim()) || []
+    : [];
+
+  // Extract topics
+  const topicMatch = content.match(/\*\*Topics?:\*\*\s*(.+)/);
+  const topics = topicMatch 
+    ? topicMatch[1].split(/[·,]/).map(t => t.trim()).filter(Boolean)
+    : [];
+
+  // Extract action items
+  const actionSection = content.match(/## 📌 Action Items\n([\s\S]*?)(?=\n## |$)/);
+  const actionItems = actionSection
+    ? actionSection[1].match(/- .+/g)?.map(item => {
+        const text = item.replace(/^- /, '').trim();
+        const priorityMatch = text.match(/🔴|🟡|🟢/);
+        const personMatch = text.match(/\*\*(.+?)\*\*/);
+        return {
+          task: text.replace(/→.*$/, '').replace(/🔴|🟡|🟢/g, '').trim(),
+          assignee: personMatch ? personMatch[1] : null,
+          priority: priorityMatch?.[0] === '🔴' ? 'high' : priorityMatch?.[0] === '🟡' ? 'medium' : 'low'
+        };
+      }) || []
+    : [];
+
+  // Extract decisions
+  const decisionSection = content.match(/## ✅ Decisions Made\n([\s\S]*?)(?=\n## )/);
+  const decisions = decisionSection
+    ? decisionSection[1].match(/- .+/g)?.map(d => d.replace(/^- /, '').trim()) || []
+    : [];
+
+  return {
+    attendees,
+    topics,
+    actionItems,
+    decisions,
+    formattedContent: content
+  };
 }
