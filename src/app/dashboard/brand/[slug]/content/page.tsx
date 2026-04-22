@@ -42,6 +42,27 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; ring: string }> 
   posted: { bg: 'bg-green-50', text: 'text-green-700', ring: 'ring-green-300' },
 };
 
+
+function cleanText(t: string | null): string {
+  if (!t) return '';
+  // Fix literal Unicode escape sequences that may come from imports
+  return t
+    .replace(/\\u201c/g, '“')
+    .replace(/\\u201d/g, '”')
+    .replace(/\\u2019/g, '’')
+    .replace(/\\u2018/g, '‘')
+    .replace(/\\u2026/g, '…')
+    .replace(/\\u2013/g, '–')
+    .replace(/\\n/g, '\n');
+}
+
+function formatMonth(m: string): string {
+  // "April 2026" -> "Apr 2026"
+  const parts = m.split(' ');
+  if (parts.length === 2) return parts[0].slice(0, 3) + ' ' + parts[1];
+  return m;
+}
+
 function StatusPill({ status }: { status: string }) {
   const label = status.replace('_', ' ');
   const c = STATUS_COLORS[status] || STATUS_COLORS.idea;
@@ -248,6 +269,8 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                                 <div>{new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
                                 {c.day_of_week && <div className="text-gray-400 text-[10px]">{c.day_of_week}</div>}
                               </div>
+                            ) : c.month ? (
+                              <div className="text-gray-400 italic text-[10px]">{formatMonth(c.month)}</div>
                             ) : '—'}
                           </td>
                           {selectedMonth === 'All' && <td className="py-2.5 px-3 text-gray-400 text-xs">{c.month}</td>}
@@ -255,8 +278,8 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                           <td className="py-2.5 px-3">
                             <button onClick={() => { setSelectedContent(c); setShowDetailModal(true); }}
                               className="text-left hover:text-purple-600 transition">
-                              <div className="text-gray-900 text-sm font-medium truncate max-w-[300px]">{c.title || c.contents?.slice(0, 60) || 'Untitled'}</div>
-                              {c.caption && <div className="text-gray-400 text-[10px] truncate max-w-[300px] mt-0.5">{c.caption.slice(0, 80)}...</div>}
+                              <div className="text-gray-900 text-sm font-medium truncate max-w-[300px]">{cleanText(c.title) || cleanText(c.contents)?.slice(0, 60) || 'Untitled'}</div>
+                              {c.caption && <div className="text-gray-400 text-[10px] truncate max-w-[300px] mt-0.5">{cleanText(c.caption).slice(0, 80)}...</div>}
                             </button>
                           </td>
                           <td className="py-2.5 px-3">
@@ -295,9 +318,9 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
                         <button onClick={() => { setEditContent(c); setContentForm({ title: c.title || '', contents: c.contents || '', content_type: c.content_type, status: c.status, date: c.date || '', day_of_week: c.day_of_week || '', caption: c.caption || '', hashtags: c.hashtags || '', link: c.link || '', schedule_time: c.schedule_time || '', comments: c.comments || '' }); setShowContentModal(true); }} className="p-1 hover:bg-gray-100 rounded text-gray-400"><Edit2 size={12} /></button>
                       </div>
                     </div>
-                    <h3 className="text-xs font-medium text-gray-900 mb-1">{c.title || c.contents?.slice(0, 50) || 'Untitled'}</h3>
+                    <h3 className="text-xs font-medium text-gray-900 mb-1">{cleanText(c.title) || cleanText(c.contents)?.slice(0, 50) || 'Untitled'}</h3>
                     <div className="flex items-center gap-2 text-[10px] text-gray-500">
-                      {c.date && <span>📅 {new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                      {c.date ? <span>📅 {new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span> : c.month ? <span className="text-gray-400 italic">📅 {formatMonth(c.month)}</span> : null}
                       {c.schedule_time && <span>⏰ {c.schedule_time}</span>}
                       {c.link && <span onClick={e => { e.stopPropagation(); window.open(c.link!, '_blank'); }} className="text-purple-600">🔗 Link</span>}
                     </div>
@@ -396,20 +419,18 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
               <StatusPill status={getSmartStatus(selectedContent.status, selectedContent.date)} />
               {selectedContent.month && <span className="text-xs text-gray-500">{selectedContent.month}</span>}
             </div>
-            <h3 className="text-lg font-semibold text-gray-900">{selectedContent.title || 'Untitled'}</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{cleanText(selectedContent.title) || 'Untitled'}</h3>
             {selectedContent.contents && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-1">Description</div>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedContent.contents}</p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{cleanText(selectedContent.contents)}</p>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
-              {selectedContent.date && (
-                <div>
+              <div>
                   <div className="text-xs font-medium text-gray-500 mb-1">Date</div>
-                  <p className="text-sm text-gray-700">{new Date(selectedContent.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  <p className="text-sm text-gray-700">{selectedContent.date ? new Date(selectedContent.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : selectedContent.month ? <span className="italic text-gray-400">{selectedContent.month} (no specific date)</span> : <span className="text-gray-400">—</span>}</p>
                 </div>
-              )}
               {selectedContent.schedule_time && (
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-1">Schedule Time</div>
@@ -420,7 +441,7 @@ export default function ContentPage({ params }: { params: Promise<{ slug: string
             {selectedContent.caption && (
               <div>
                 <div className="text-xs font-medium text-gray-500 mb-1">Caption</div>
-                <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 border border-gray-100">{selectedContent.caption}</p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-lg p-3 border border-gray-100">{cleanText(selectedContent.caption)}</p>
               </div>
             )}
             {selectedContent.hashtags && (
