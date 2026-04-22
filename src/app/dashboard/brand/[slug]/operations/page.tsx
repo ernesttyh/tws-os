@@ -133,16 +133,67 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     }
   };
 
-  // File upload handler — stores file content, does NOT create meeting yet
+  // Load pdf.js from CDN for PDF text extraction
+  const loadPdfJs = useCallback(async () => {
+    if ((window as any).pdfjsLib) return (window as any).pdfjsLib;
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      script.onload = () => {
+        const lib = (window as any).pdfjsLib;
+        lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        resolve(lib);
+      };
+      script.onerror = () => reject(new Error('Failed to load PDF parser'));
+      document.head.appendChild(script);
+    });
+  }, []);
+
+  // Extract text from PDF using pdf.js
+  const extractPdfText = useCallback(async (file: File): Promise<string> => {
+    const pdfjsLib = await loadPdfJs() as any;
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item: any) => {
+          // Add newline for large Y-position gaps (new lines in PDF)
+          return item.str;
+        })
+        .join(' ')
+        .replace(/  +/g, ' ')
+        .trim();
+      if (pageText) pages.push(pageText);
+    }
+    return pages.join('\n');
+  }, [loadPdfJs]);
+
+  // File upload handler — supports PDF, TXT, MD files
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingFile(true);
     try {
-      const text = await file.text();
+      let text = '';
+      const ext = file.name.split('.').pop()?.toLowerCase();
+
+      if (ext === 'pdf') {
+        text = await extractPdfText(file);
+      } else {
+        text = await file.text();
+      }
+
+      if (!text.trim()) {
+        throw new Error('Could not extract text from this file. Please try exporting as .txt instead.');
+      }
       setUploadedFile({ name: file.name, size: file.size, content: text });
     } catch (err) {
       console.error('Upload failed:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to read file';
+      alert(`⚠️ ${msg}\n\nTip: For Plaud recordings, try exporting as .txt format instead of PDF.`);
     }
     setUploadingFile(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -598,14 +649,14 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                       <p className="text-xs text-purple-700 mt-1">
                         {newSource === 'plaud' ? 'Export your Plaud transcript as .txt and upload it here. We\'ll auto-detect speakers and extract action items.' :
                          newSource === 'whatsapp' ? 'Export your WhatsApp chat (without media) and upload the .txt file.' :
-                         'Upload a .txt transcript file. Speaker labels and timestamps will be detected.'}
+                         'Upload a .txt or .pdf transcript file. Speaker labels and timestamps will be detected.'}
                       </p>
                       {!uploadedFile && (
                         <>
                           <input
                             ref={fileInputRef}
                             type="file"
-                            accept=".txt,.doc,.docx,.pdf,.md"
+                            accept=".txt,.pdf,.md,.doc,.docx"
                             onChange={handleFileUpload}
                             className="mt-3 text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer"
                             disabled={uploadingFile}

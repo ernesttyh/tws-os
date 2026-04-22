@@ -96,11 +96,11 @@ export default function DesignRequestForm() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Filter brands based on search input (only show when 1+ chars typed)
-  const filteredBrands = brandSearch.length >= 1
+  // Filter brands — require 3+ chars for confidentiality (never expose full list)
+  const filteredBrands = brandSearch.length >= 3
     ? brands.filter(b =>
         b.name.toLowerCase().includes(brandSearch.toLowerCase())
-      )
+      ).slice(0, 3)
     : []
 
   const handleBrandSelect = (brand: Brand) => {
@@ -303,7 +303,7 @@ export default function DesignRequestForm() {
             <label className="block text-sm font-semibold text-gray-900 mb-1">
               BRAND <span className="text-red-500">*</span>
             </label>
-            <p className="text-xs text-gray-500 mb-2">Start typing the brand name</p>
+            <p className="text-xs text-gray-500 mb-2">Type at least 3 characters to search</p>
             <div className="relative">
               <input
                 ref={brandInputRef}
@@ -311,8 +311,8 @@ export default function DesignRequestForm() {
                 required
                 value={brandSearch}
                 onChange={e => handleBrandInputChange(e.target.value)}
-                onFocus={() => { if (brandSearch.length >= 1) setShowSuggestions(true) }}
-                placeholder="Type brand name..."
+                onFocus={() => { if (brandSearch.length >= 3) setShowSuggestions(true) }}
+                placeholder="Type at least 3 letters..."
                 autoComplete="off"
                 className={`w-full border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none ${
                   selectedBrand
@@ -358,7 +358,7 @@ export default function DesignRequestForm() {
               )}
               
               {/* No match message */}
-              {showSuggestions && brandSearch.length >= 2 && filteredBrands.length === 0 && !selectedBrand && (
+              {showSuggestions && brandSearch.length >= 3 && filteredBrands.length === 0 && !selectedBrand && (
                 <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3">
                   <p className="text-sm text-gray-500">No brand found matching &ldquo;{brandSearch}&rdquo;</p>
                   <p className="text-xs text-gray-400 mt-1">Check the spelling and try again</p>
