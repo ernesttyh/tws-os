@@ -100,17 +100,7 @@ function l8ProfileUrl(handle: string | null): string | null {
 
 // Platform post icon component — read-only indicator, links to actual post URL (not profile)
 function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { label: string; emoji: string; posted: boolean; postUrl: string | null; profileUrl: string | null }) {
-  if (!posted) {
-    return (
-      <span
-        title={`${label}: not posted`}
-        className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-gray-100 text-gray-400 opacity-40"
-      >
-        {emoji}
-      </span>
-    );
-  }
-  // Posted — link to actual post if URL exists, otherwise show as indicator
+  // If postUrl exists (regardless of posted boolean) → clickable purple linked icon
   if (postUrl) {
     return (
       <a
@@ -124,15 +114,28 @@ function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { labe
       </a>
     );
   }
+  // If posted is true but no URL → green indicator
+  if (posted) {
+    return (
+      <span
+        title={`${label}: posted (no link)`}
+        className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-green-100 text-green-600 ring-1 ring-green-300"
+      >
+        {emoji}
+      </span>
+    );
+  }
+  // Neither → dim gray indicator
   return (
     <span
-      title={`${label}: posted (no link)`}
-      className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-green-100 text-green-600 ring-1 ring-green-300"
+      title={`${label}: not posted`}
+      className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-gray-100 text-gray-400 opacity-40"
     >
       {emoji}
     </span>
   );
 }
+
 
 export default function InfluencersPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);

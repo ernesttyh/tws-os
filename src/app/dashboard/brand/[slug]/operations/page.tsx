@@ -797,6 +797,110 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
 
 // Cadence Tracker Sub-component
 function CadenceTracker({ brandId, meetings, tasks }: { brandId: string | null; meetings: Meeting[]; tasks: Task[] }) {
+  const supabase = createBrowserClient();
+  const now = new Date();
+  const thisMonth = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+
+  const [calendarMeetings, setCalendarMeetings] = useState(0);
+  const [postsThisMonth, setPostsThisMonth] = useState(0);
+  const [kolInvitations, setKolInvitations] = useState(0);
+  const [extraLoading, setExtraLoading] = useState(true);
+
+  const activeTasks = tasks.filter(t => t.status !== 'done' && t.status !== 'archived');
+  const overdueTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) < now);
+
+  useEffect(() => {
+    if (!brandId) { setExtraLoading(false); return; }
+    let cancelled = false;
+
+    async function fetchExtra() {
+      setExtraLoading(true);
+      try {
+        // 1. Calendar meetings this month
+        const calRes = await fetch(`/api/brands/${brandId}/calendar?from=${monthStart}&to=${monthEnd}`);
+        if (calRes.ok) {
+          const calEvents = await calRes.json();
+          const meetingCount = (calEvents || []).filter((e: { event_type: string }) => e.event_type === 'meeting').length;
+          if (!cancelled) setCalendarMeetings(meetingCount);
+        }
+
+        // 2. Content items (posts) this month
+        const { count: postCount } = await supabase
+          .from('content_items')
+          .select('id', { count: 'exact', head: true })
+          .eq('brand_id', brandId)
+          .gte('created_at', monthStart)
+          .lte('created_at', monthEnd + 'T23:59:59');
+        if (!cancelled) setPostsThisMonth(postCount || 0);
+
+        // 3. KOL invitations this month
+        const invMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+        const { count: invCount } = await supabase
+          .from('influencer_invitations')
+          .select('id', { count: 'exact', head: true })
+          .eq('brand_id', brandId)
+          .eq('event_month', invMonth);
+        if (!cancelled) setKolInvitations(invCount || 0);
+
+      } catch (err) {
+        console.error('CadenceTracker fetch error:', err);
+      }
+      if (!cancelled) setExtraLoading(false);
+    }
+
+    fetchExtra();
+    return () => { cancelled = true; };
+  }, [brandId, monthStart, monthEnd, supabase]);
+
+  const stats = [
+    { label: 'Meetings This Month', value: calendarMeetings, target: 2, icon: Calendar, loading: extraLoading },
+    { label: 'Posts This Month', value: postsThisMonth, target: 4, icon: FileText, loading: extraLoading },
+    { label: 'Active Tasks', value: activeTasks.length, target: null, icon: CheckSquare, loading: false },
+    { label: 'Overdue Tasks', value: overdueTasks.length, target: 0, icon: ClipboardList, loading: false },
+    { label: 'KOL Invitations', value: kolInvitations, target: null, icon: Users, loading: extraLoading },
+  ];
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <h2 className="text-base sm:text-lg font-semibold text-gray-900">Cadence Tracker — {thisMonth}</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        {stats.map((s, i) => {
+          const isGood = s.target === null ? true : s.label.includes('Overdue') ? s.value === 0 : s.value >= s.target;
+          return (
+            <div key={i} className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200">
+              <div className="flex items-center gap-2 text-gray-500 text-xs sm:text-sm mb-2"><s.icon size={16} />{s.label}</div>
+              <div className="flex items-baseline gap-2">
+                {s.loading ? (
+                  <div className="h-8 w-8 bg-gray-100 rounded animate-pulse" />
+                ) : (
+                  <span className={`text-2xl sm:text-3xl font-bold ${isGood ? 'text-green-600' : 'text-red-500'}`}>{s.value}</span>
+                )}
+                {s.target !== null && <span className="text-xs sm:text-sm text-gray-500">/ {s.target} target</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {overdueTasks.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+          <h3 className="text-xs sm:text-sm font-semibold text-red-600 mb-2">⚠️ Overdue Tasks</h3>
+          <div className="space-y-1">
+            {overdueTasks.map(t => (
+              <div key={t.id} className="flex items-center justify-between text-xs sm:text-sm">
+                <span className="text-gray-700">{t.title}</span>
+                <span className="text-red-500 text-xs">Due {new Date(t.due_date!).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+: { brandId: string | null; meetings: Meeting[]; tasks: Task[] }) {
   const now = new Date();
   const thisMonth = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   const thisMonthMeetings = meetings.filter(m => { const d = new Date(m.meeting_date); return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear(); });

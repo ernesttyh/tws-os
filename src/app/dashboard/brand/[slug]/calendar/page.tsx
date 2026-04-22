@@ -4,13 +4,14 @@ import { createBrowserClient } from '@/lib/supabase/client';
 import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import EmptyState from '@/components/ui/EmptyState';
-import { Calendar, Plus, ChevronLeft, ChevronRight, Trash2, Edit2 } from 'lucide-react';
+import { Calendar, Plus, ChevronLeft, ChevronRight, Trash2, Edit2, X, Clock, MapPin } from 'lucide-react';
 
 interface CalendarEvent { id: string; title: string; event_type: string; start_date: string; end_date: string | null; start_time: string | null; all_day: boolean; color: string | null; description: string | null; location: string | null; brand_name?: string | null; brand_slug?: string | null }
 type ViewMode = 'month' | 'year';
 
 const EVENT_TYPES = [{ value: 'meeting', label: '📋 Meeting' }, { value: 'shoot', label: '📸 Shoot' }, { value: 'post', label: '📱 Post' }, { value: 'kol_visit', label: '🌟 KOL Visit' }, { value: 'campaign', label: '🚀 Campaign' }, { value: 'key_date', label: '📅 Key Date' }, { value: 'deadline', label: '⏰ Deadline' }];
 const TYPE_COLORS: Record<string, string> = { meeting: 'bg-blue-500', shoot: 'bg-orange-500', post: 'bg-green-500', kol_visit: 'bg-pink-500', campaign: 'bg-purple-500', key_date: 'bg-yellow-500', deadline: 'bg-red-500' };
+const TYPE_LABELS: Record<string, string> = { meeting: '📋 Meeting', shoot: '📸 Shoot', post: '📱 Post', kol_visit: '🌟 KOL Visit', campaign: '🚀 Campaign', key_date: '📅 Key Date', deadline: '⏰ Deadline' };
 
 export default function CalendarPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
@@ -22,6 +23,8 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
   const [showModal, setShowModal] = useState(false);
   const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showDayModal, setShowDayModal] = useState(false);
+  const [dayModalDate, setDayModalDate] = useState<string | null>(null);
 
   const supabase = createBrowserClient();
 
@@ -57,7 +60,7 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
     setShowModal(false); setEditEvent(null); resetForm(); loadEvents(brandId);
   };
 
-  const deleteEvent = async (id: string) => { if (!brandId || !confirm('Delete this event?')) return; await fetch(`/api/brands/${brandId}/calendar/${id}`, { method: 'DELETE' }); loadEvents(brandId); };
+  const deleteEvent = async (id: string) => { if (!brandId || !confirm('Delete this event?')) return; await fetch(`/api/brands/${brandId}/calendar/${id}`, { method: 'DELETE' }); setShowModal(false); setEditEvent(null); loadEvents(brandId); };
 
   // Calendar grid helpers
   const year = currentDate.getFullYear();
@@ -72,10 +75,49 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
     return events.filter(e => e.start_date === dateStr || (e.end_date && e.start_date <= dateStr && e.end_date >= dateStr));
   };
 
+  const getEventsForDateStr = (dateStr: string) => {
+    return events.filter(e => e.start_date === dateStr || (e.end_date && e.start_date <= dateStr && e.end_date >= dateStr));
+  };
+
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
   const prevYear = () => setCurrentDate(new Date(year - 1, month, 1));
   const nextYear = () => setCurrentDate(new Date(year + 1, month, 1));
+
+  // Open day detail modal
+  const openDayModal = (dateStr: string) => {
+    setDayModalDate(dateStr);
+    setShowDayModal(true);
+  };
+
+  // Open event editor for an event
+  const openEditEvent = (e: CalendarEvent) => {
+    setEditEvent(e);
+    setForm({
+      title: e.title,
+      event_type: e.event_type,
+      start_date: e.start_date,
+      end_date: e.end_date || '',
+      start_time: e.start_time || '',
+      all_day: e.all_day,
+      description: e.description || '',
+      location: e.location || '',
+    });
+    setShowDayModal(false);
+    setShowModal(true);
+  };
+
+  // Open new event form from day modal
+  const openNewEventForDate = (dateStr: string) => {
+    resetForm();
+    setForm(f => ({ ...f, start_date: dateStr }));
+    setEditEvent(null);
+    setShowDayModal(false);
+    setShowModal(true);
+  };
+
+  const dayModalEvents = dayModalDate ? getEventsForDateStr(dayModalDate) : [];
+  const dayModalLabel = dayModalDate ? new Date(dayModalDate + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
   if (loading) return <div className="p-4 sm:p-6"><div className="animate-pulse space-y-4"><div className="h-8 bg-gray-50 rounded w-48" /><div className="h-96 bg-gray-50 rounded" /></div></div>;
 
@@ -123,13 +165,16 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
               const isToday = dateStr === new Date().toISOString().split('T')[0];
               return (
                 <div key={d} className={`min-h-[48px] sm:min-h-[100px] border-b border-r border-gray-200 p-0.5 sm:p-1.5 cursor-pointer hover:bg-gray-50 transition ${isToday ? 'bg-purple-50' : ''}`}
-                     onClick={() => { setSelectedDate(dateStr); setForm(f => ({ ...f, start_date: dateStr })); setShowModal(true); }}>
-                  <span className={`text-[10px] sm:text-xs font-medium ${isToday ? 'bg-purple-600 text-white px-1 sm:px-1.5 py-0.5 rounded-full' : 'text-gray-500'}`}>{d}</span>
+                     onClick={() => openDayModal(dateStr)}>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] sm:text-xs font-medium ${isToday ? 'bg-purple-600 text-white px-1 sm:px-1.5 py-0.5 rounded-full' : 'text-gray-500'}`}>{d}</span>
+                    {dayEvents.length > 2 && <span className="text-[7px] sm:text-[10px] bg-purple-100 text-purple-600 font-semibold px-1 rounded-full">{dayEvents.length}</span>}
+                  </div>
                   <div className="space-y-0.5 mt-0.5">
                     {dayEvents.slice(0, 2).map(e => (
-                      <div key={e.id} className={`text-[8px] sm:text-xs px-1 sm:px-1.5 py-0 sm:py-0.5 rounded truncate text-white ${TYPE_COLORS[e.event_type] || 'bg-gray-600'}`} onClick={(ev) => { ev.stopPropagation(); setEditEvent(e); setForm({ title: e.title, event_type: e.event_type, start_date: e.start_date, end_date: e.end_date || '', start_time: e.start_time || '', all_day: e.all_day, description: e.description || '', location: e.location || '' }); setShowModal(true); }}>
-                        <span className="hidden sm:inline">{e.title}</span>
-                        <span className="sm:hidden">•</span>
+                      <div key={e.id} className={`text-[8px] sm:text-xs px-1 sm:px-1.5 py-0 sm:py-0.5 rounded truncate text-white ${TYPE_COLORS[e.event_type] || 'bg-gray-600'}`}
+                           onClick={(ev) => { ev.stopPropagation(); openEditEvent(e); }}>
+                        {e.title.length > 8 ? e.title.slice(0, 8) + '…' : e.title}
                       </div>
                     ))}
                     {dayEvents.length > 2 && <span className="text-[8px] sm:text-xs text-gray-500">+{dayEvents.length - 2}</span>}
@@ -164,6 +209,42 @@ export default function CalendarPage({ params }: { params: Promise<{ slug: strin
           })}
         </div>
       )}
+
+      {/* Day Detail Modal */}
+      <Modal open={showDayModal} onClose={() => setShowDayModal(false)} title={dayModalLabel} size="md">
+        <div className="space-y-3">
+          {dayModalEvents.length === 0 ? (
+            <p className="text-sm text-gray-500 text-center py-6">No events on this day</p>
+          ) : (
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {dayModalEvents.map(e => (
+                <div key={e.id} onClick={() => openEditEvent(e)} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:border-purple-300 cursor-pointer transition group">
+                  <div className={`w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${TYPE_COLORS[e.event_type] || 'bg-gray-400'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-900">{e.title}</span>
+                      <span className="text-[10px] text-gray-500">{TYPE_LABELS[e.event_type] || e.event_type}</span>
+                    </div>
+                    <div className="flex items-center gap-3 mt-1 text-[10px] sm:text-xs text-gray-500">
+                      {e.start_time && <span className="flex items-center gap-0.5"><Clock size={10} />{e.start_time}</span>}
+                      {e.location && <span className="flex items-center gap-0.5"><MapPin size={10} />{e.location}</span>}
+                      {e.brand_name && <span className="px-1 py-0.5 bg-purple-100 text-purple-600 rounded text-[9px] font-medium">{e.brand_name}</span>}
+                    </div>
+                    {e.description && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{e.description}</p>}
+                  </div>
+                  <Edit2 size={14} className="text-gray-400 group-hover:text-purple-500 shrink-0 mt-1 transition" />
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-between pt-2 border-t border-gray-200">
+            <button onClick={() => setShowDayModal(false)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-900">Close</button>
+            <button onClick={() => dayModalDate && openNewEventForDate(dayModalDate)} className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition">
+              <Plus size={14} /> New Event
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Event Modal */}
       <Modal open={showModal} onClose={() => { setShowModal(false); setEditEvent(null); }} title={editEvent ? 'Edit Event' : 'New Event'} size="md">

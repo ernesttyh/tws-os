@@ -10,14 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ bran
     .eq('brand_id', brandId)
     .order('created_at', { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  // Get metrics summary for each campaign
-  const campaignIds = (data || []).map(c => c.id);
-  let metrics: Record<string, unknown>[] = [];
-  if (campaignIds.length > 0) {
-    const { data: m } = await supabase.from('ad_daily_metrics').select('*').in('campaign_id', campaignIds).order('date', { ascending: false });
-    metrics = m || [];
-  }
-  return NextResponse.json({ campaigns: data, metrics });
+  return NextResponse.json({ campaigns: data });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ brandId: string }> }) {
