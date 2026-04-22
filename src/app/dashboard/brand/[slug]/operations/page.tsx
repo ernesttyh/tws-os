@@ -319,8 +319,9 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       if (aiRes.ok) {
         const aiData = await aiRes.json();
         if (aiData.html) {
-          // AI returned HTML directly — use it
-          processed = { html: aiData.html, actionItemCount: aiData.actionItemCount || 0 };
+          // AI returned HTML directly — strip any code fences the model might add
+          let cleanHtml = aiData.html.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+          processed = { html: cleanHtml, actionItemCount: aiData.actionItemCount || 0 };
         } else {
           processed = aiResultToHtml(aiData);
         }
@@ -383,7 +384,8 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
       if (aiRes.ok) {
         const aiData = await aiRes.json();
         if (aiData.html) {
-          processed = { html: aiData.html, actionItemCount: aiData.actionItemCount || 0 };
+          let cleanHtml = aiData.html.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+          processed = { html: cleanHtml, actionItemCount: aiData.actionItemCount || 0 };
         } else {
           processed = aiResultToHtml(aiData);
         }

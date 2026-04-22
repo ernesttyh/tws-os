@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
+async function extractTextFromPDF(buffer: ArrayBuffer): Promise<string> {
+  // Dynamic import to avoid build issues
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
+  const lines: string[] = [];
+  
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const textContent = await page.getTextContent();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pageText = textContent.items
+      .filter((item: any) => 'str' in item)
+      .map((item: any) => item.str || '')
+      .join(' ');
+    if (pageText.trim()) {
+      lines.push(pageText.trim());
+    }
+  }
+  
+  return lines.join('\n');
+}
+
 export async function POST(request: NextRequest) {
   try {
     const contentType = request.headers.get('content-type') || '';
@@ -13,14 +36,25 @@ export async function POST(request: NextRequest) {
       const textContent = formData.get('transcript') as string | null;
       const file = formData.get('file') as File | null;
       
-      if (textContent && textContent.trim().length > 10) {
+      // For PDFs, always try server-side extraction first
+      if (file && file.name.endsWith('.pdf')) {
+        try {
+          const buffer = await file.arrayBuffer();
+          transcript = await extractTextFromPDF(buffer);
+          console.log(`Server-side PDF extraction: ${transcript.length} chars, ${transcript.split('\n').length} lines`);
+        } catch (pdfError) {
+          console.error('Server-side PDF extraction failed:', pdfError);
+          // Fall back to client-extracted text
+          if (textContent && textContent.trim().length > 50) {
+            transcript = textContent;
+          }
+        }
+      } else if (textContent && textContent.trim().length > 10) {
         transcript = textContent;
       } else if (file) {
-        // Try reading file as text (works for .txt, .md)
+        // .txt files — read as text
         const buffer = await file.arrayBuffer();
         transcript = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
-        // Clean up any binary garbage for PDFs read as text
-        transcript = transcript.replace(/[^\x20-\x7E\n\r\t\u00A0-\uFFFF]/g, ' ').replace(/ {3,}/g, ' ');
       }
     } else {
       const body = await request.json();
@@ -49,22 +83,24 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
-        temperature: 0.3,
-        max_tokens: 4000,
+        temperature: 0.2,
+        max_tokens: 8000,
         messages: [
           {
             role: 'system',
             content: `You are a meeting notes assistant for TWS Branding, an F&B marketing agency managing restaurant brands in Singapore. Your job is to produce COMPREHENSIVE, DETAILED meeting notes from transcripts.
 
 CRITICAL RULES:
-- Be THOROUGH. Capture EVERY distinct topic, decision, and action item discussed. Do NOT over-summarize.
-- The transcript may be bilingual (English + Mandarin Chinese). Process BOTH languages.
-- Attendee names: extract real names mentioned (not brand names). If someone is referred to by role only, note the role.
-- Discussion points: Create a bullet for EVERY separate topic discussed. Group related sub-points under the main topic. Include specific details (dates, numbers, names, locations, amounts).
-- For each discussion topic, include 2-4 sub-bullets with the specific details discussed.
-- Action items: Extract EVERY task, to-do, follow-up, or commitment mentioned. Be specific about what needs to be done.
+- Be EXTREMELY THOROUGH. This is a workplan meeting — every detail matters.
+- Capture EVERY distinct topic, decision, and action item discussed. Do NOT over-summarize or skip anything.
+- The transcript is likely bilingual (English + Mandarin Chinese). Process BOTH languages equally.
+- Use the ACTUAL names mentioned in the transcript. Never invent or substitute names.
+- If you cannot identify specific names, write "Speaker" or describe by role — NEVER use placeholder names like "John Doe".
+- Discussion points: Create a bullet for EVERY separate topic. Group sub-points under topics with specific details (dates, numbers, names, locations, amounts, deadlines).
+- For each topic, include ALL sub-points discussed — typically 2-6 per topic.
+- Action items: Extract EVERY task, to-do, follow-up, or commitment. Include WHO is responsible and WHEN if mentioned.
 
-OUTPUT FORMAT (use this exact structure with HTML tags for rich text editor):
+OUTPUT FORMAT — use ONLY these HTML tags (h2, h3, h4, ul, li, strong, em, p). Do NOT wrap in code fences or markdown:
 
 <h2>📋 Meeting Summary</h2>
 <p><em>AI-processed transcript. Review and edit as needed.</em></p>
@@ -72,8 +108,8 @@ OUTPUT FORMAT (use this exact structure with HTML tags for rich text editor):
 
 <h3>👥 Attendees</h3>
 <ul>
-<li>[Name 1] — [role if mentioned]</li>
-<li>[Name 2]</li>
+<li>[Real Name 1] — [role if mentioned]</li>
+<li>[Real Name 2]</li>
 </ul>
 
 <h3>📝 Key Discussion Points</h3>
@@ -83,45 +119,34 @@ OUTPUT FORMAT (use this exact structure with HTML tags for rich text editor):
 <li>[Main point with specific detail]
 <ul><li>[Sub-detail: dates, numbers, decisions]</li><li>[Sub-detail: who said what]</li></ul>
 </li>
-<li>[Another point under this topic]</li>
 </ul>
 
-<h4>[Topic 2 Title]</h4>
-<ul>
-<li>[Main point]
-<ul><li>[Sub-detail]</li></ul>
-</li>
-</ul>
-
-[Continue for ALL topics discussed...]
+[Repeat h4 + ul for EVERY topic discussed...]
 
 <h3>✅ Decisions Made</h3>
 <ul>
 <li>[Decision 1 — with context]</li>
-<li>[Decision 2 — with context]</li>
 </ul>
 
 <h3>📌 Action Items</h3>
 <ul>
-<li>[Task description] → <strong>[Person]</strong> — [Deadline] 🔴</li>
-<li>[Task description] → <strong>[Person]</strong> 🟡</li>
+<li>[Task description] → <strong>[Person]</strong> — [Deadline if mentioned] 🔴</li>
 </ul>
 
 <h3>💡 Notes & Context</h3>
 <ul>
-<li>[Important context or concerns]</li>
-<li>[Follow-up items]</li>
+<li>[Important context, concerns, or follow-ups]</li>
 </ul>
 
 Priority: 🔴 = urgent/this week, 🟡 = medium/next week, 🟢 = low/no rush
 
-IMPORTANT: A 30-minute meeting typically has 15-25 discussion bullets across 5-8 topics, 3-8 decisions, and 5-15 action items. If your output has fewer, you are missing details. Go back and re-read the transcript.
+IMPORTANT: A typical 30-min F&B workplan meeting covers 5-10 topics with 15-30+ discussion bullets, 3-8 decisions, and 5-15 action items. If your output has significantly fewer, you are missing details.
 
-OUTPUT MUST BE VALID HTML. Use <h2>, <h3>, <h4>, <ul>, <li>, <strong>, <em>, <p> tags. Do NOT use markdown.`
+OUTPUT MUST BE VALID HTML ONLY. No markdown, no code fences, no backticks. Start directly with <h2>.`
           },
           {
             role: 'user',
-            content: `Process this meeting transcript into comprehensive, detailed meeting notes. Capture EVERY topic discussed, every decision made, and every action item or follow-up mentioned. Do not skip anything. Output as HTML.\n\n---\n\n${truncatedTranscript}`
+            content: `Process this meeting transcript into comprehensive, detailed meeting notes. Capture EVERY topic, decision, and action item. Use ONLY real names from the transcript — never invent names. Output as raw HTML only (no markdown wrapping).\n\n---\n\n${truncatedTranscript}`
           }
         ]
       }),
@@ -137,23 +162,25 @@ OUTPUT MUST BE VALID HTML. Use <h2>, <h3>, <h4>, <ul>, <li>, <strong>, <em>, <p>
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    let content = data.choices?.[0]?.message?.content;
 
     if (!content) {
       return NextResponse.json({ error: 'No content returned from AI' }, { status: 500 });
     }
 
-    // Count action items from the HTML
-    const actionItemCount = (content.match(/📌|→\s*<strong>/g) || []).length;
-    // Count by li items in action items section
+    // Strip markdown code fences if AI wrapped them
+    content = content.replace(/^```html?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+
+    // Count action items
     const actionSection = content.match(/<h3>📌 Action Items<\/h3>\s*<ul>([\s\S]*?)<\/ul>/);
     const liCount = actionSection ? (actionSection[1].match(/<li>/g) || []).length : 0;
 
     return NextResponse.json({
       success: true,
       html: content,
-      actionItemCount: liCount || actionItemCount,
-      extractedText: transcript,
+      actionItemCount: liCount,
+      extractedText: transcript.substring(0, 500) + (transcript.length > 500 ? '...' : ''),
+      extractedLength: transcript.length,
     });
 
   } catch (error) {
