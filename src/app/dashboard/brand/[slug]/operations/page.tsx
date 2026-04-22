@@ -18,7 +18,7 @@ type TaskViewMode = 'table' | 'kanban';
 
 interface Brand { id: string; name: string; slug: string; brand_group: string }
 interface Meeting { id: string; brand_id: string; title: string; meeting_date: string; meeting_type: string; content: string | null; source: string; action_items_extracted: boolean; transcript_raw: string | null; creator?: { id: string; name: string } | null; brand?: { name: string; slug: string } | null }
-interface Task { id: string; title: string; description: string | null; status: string; priority: string; due_date: string | null; assigned_member?: { name: string } | null; tags: string[] | null; created_at?: string }
+interface Task { id: string; title: string; description: string | null; status: string; priority: string; due_date: string | null; assigned_to: string | null; assigned_member?: { id: string; name: string; email: string } | null; tags: string[] | null; created_at?: string }
 
 const BRAND_GROUP_LABELS: Record<string, string> = {
   neo_group: 'Neo Group', fleursophy: 'Fleursophy', deprosperoo: 'Deprosperoo', independent: 'Independent', tsim: 'TSIM', other: 'Other'
@@ -322,7 +322,12 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
   const quickUpdateTask = async (taskId: string, updates: Record<string, string | null>) => {
     if (!brand) return;
     await fetch(`/api/brands/${brand.id}/tasks/${taskId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates as Record<string, string> } : t));
+    if ('assigned_to' in updates) {
+      const member = teamMembers.find(m => m.id === updates.assigned_to);
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates, assigned_member: member ? { id: member.id, name: member.name, email: '' } : null } as unknown as Task : t));
+    } else {
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates as Record<string, string> } : t));
+    }
   };
 
   const deleteTask = async (id: string) => {
@@ -624,7 +629,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                         const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
                         return (
                           <tr key={task.id} className="hover:bg-gray-50 transition group cursor-pointer"
-                              onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                              onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: task.assigned_to || '' }); setShowTaskModal(true); }}>
                             <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                               <select value={task.status} onChange={e => quickUpdateTask(task.id, { status: e.target.value })}
                                 className={`text-xs font-medium rounded-md px-1.5 py-1 border-0 cursor-pointer ${sc.bg} ${sc.color} focus:ring-1 focus:ring-purple-500`}>
@@ -644,7 +649,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                                 <option value="low">⚪ Low</option>
                               </select>
                             </td>
-                            <td className="px-4 py-3 text-xs text-gray-600">{task.assigned_member?.name || '—'}</td>
+                            <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                              <select value={task.assigned_to || ''} onChange={e => quickUpdateTask(task.id, { assigned_to: e.target.value || null })}
+                                className="text-xs font-medium bg-transparent border-0 cursor-pointer focus:ring-1 focus:ring-purple-500 rounded-md p-1 text-gray-600 w-full max-w-[140px]">
+                                <option value="">— Unassigned</option>
+                                {teamMembers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                              </select>
+                            </td>
                             <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                               <input
                                 type="date"
@@ -672,7 +683,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                     const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'done';
                     return (
                       <div key={task.id} className="bg-white rounded-lg border border-gray-200 p-3 active:bg-gray-50 transition"
-                           onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                           onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: task.assigned_to || '' }); setShowTaskModal(true); }}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1.5">
@@ -682,7 +693,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                             <div className="text-sm font-medium text-gray-900">{task.title}</div>
                             {task.description && <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{task.description}</div>}
                             <div className="flex items-center gap-3 mt-2 text-[10px] text-gray-500">
-                              {task.assigned_member?.name && <span>👤 {task.assigned_member.name}</span>}
+                              <span onClick={e => e.stopPropagation()} className="flex items-center">
+                              <select value={task.assigned_to || ''} onChange={e => { e.stopPropagation(); quickUpdateTask(task.id, { assigned_to: e.target.value || null }); }}
+                                className="text-[10px] bg-transparent border-0 cursor-pointer focus:ring-1 focus:ring-purple-500 rounded p-0 text-gray-500">
+                                <option value="">👤 Unassigned</option>
+                                {teamMembers.map(m => <option key={m.id} value={m.id}>👤 {m.name}</option>)}
+                              </select>
+                            </span>
                               {task.due_date && <span className={isOverdue ? 'text-red-500 font-medium' : ''}>{isOverdue ? '⚠️ ' : '📅 '}{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                             </div>
                           </div>
@@ -712,7 +729,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                     <div className="space-y-2">
                       {(tasksByStatus[status] || []).map(task => (
                         <div key={task.id} className="bg-white rounded-lg p-2.5 sm:p-3 border border-gray-200 hover:border-purple-300 transition cursor-pointer group"
-                             onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: '' }); setShowTaskModal(true); }}>
+                             onClick={() => { setEditTask(task); setTaskForm({ title: task.title, description: task.description || '', status: task.status, priority: task.priority, due_date: task.due_date || '', assigned_to: task.assigned_to || '' }); setShowTaskModal(true); }}>
                           <div className="flex items-start justify-between">
                             <span className="text-xs sm:text-sm text-gray-900 font-medium leading-tight">{task.title}</span>
                             <button onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }} className="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 text-gray-400 transition"><Trash2 size={12} /></button>
@@ -721,7 +738,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
                           <div className="flex items-center gap-1.5 sm:gap-2 mt-2 flex-wrap">
                             <PriorityBadge priority={task.priority} />
                             {task.due_date && <span className="text-[10px] sm:text-xs text-gray-500">{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                            {task.assigned_member && <span className="text-[10px] sm:text-xs text-gray-500">→ {task.assigned_member.name}</span>}
+                            <span onClick={e => e.stopPropagation()}>
+                              <select value={task.assigned_to || ''} onChange={e => { e.stopPropagation(); quickUpdateTask(task.id, { assigned_to: e.target.value || null }); }}
+                                className="text-[10px] sm:text-xs bg-transparent border-0 cursor-pointer focus:ring-1 focus:ring-purple-500 rounded p-0 text-gray-500 max-w-[100px]">
+                                <option value="">→ Unassigned</option>
+                                {teamMembers.map(m => <option key={m.id} value={m.id}>→ {m.name}</option>)}
+                              </select>
+                            </span>
                           </div>
                         </div>
                       ))}

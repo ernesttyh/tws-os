@@ -5,7 +5,7 @@ import { BarChart3, AlertTriangle, CheckCircle, Clock, TrendingUp, Palette, Layo
 import Link from 'next/link';
 
 /* ─── Types ─── */
-interface BrandSummary { id: string; name: string; slug: string; brand_group: string; tasks_total: number; tasks_overdue: number; content_count: number; meetings_this_month: number; active_ads: number; kol_count: number; health: number }
+interface BrandSummary { id: string; name: string; slug: string; brand_group: string; google_sheet_id: string | null; tasks_total: number; tasks_overdue: number; content_count: number; meetings_this_month: number; active_ads: number; kol_count: number; health: number }
 interface DesignBrief { id: string; brand_id: string; brand_name: string; brand_slug: string; title: string; description: string | null; dimensions: string | null; status: string; deadline: string | null; revision_count: number; assigned_to: string | null; assignee_name: string | null; drive_folder_url: string | null; created_at: string }
 interface ContentItem { id: string; brand_id: string; brand_name: string; brand_slug: string; platform: string; status: string; date: string | null; caption: string | null; month: string | null }
 
@@ -27,6 +27,88 @@ const GROUP_COLORS: Record<string, string> = {
   independent: 'bg-gray-50 text-gray-700 border-gray-200',
   tsim: 'bg-violet-50 text-violet-700 border-violet-200',
 };
+
+
+// ── My Tasks Section ──
+function MyTasksSection() {
+  const [tasks, setTasks] = useState<{ id: string; title: string; status: string; priority: string; due_date: string | null; brand?: { id: string; name: string; slug: string } | null }[]>([]);
+  const [memberName, setMemberName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(true);
+  const supabase = createBrowserClient();
+
+  useEffect(() => {
+    const loadMyTasks = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/my-tasks');
+        if (res.ok) {
+          const data = await res.json();
+          setTasks(data.tasks || []);
+          setMemberName(data.member?.name || '');
+        }
+      } catch (e) { console.error(e); }
+      setLoading(false);
+    };
+    loadMyTasks();
+  }, []);
+
+  if (loading) return <div className="bg-white rounded-xl border border-gray-200 p-4 animate-pulse"><div className="h-6 bg-gray-100 rounded w-32" /></div>;
+  if (!memberName || tasks.length === 0) return null;
+
+  const STATUS_ICONS: Record<string, string> = { backlog: '📋', todo: '📌', in_progress: '🔄', review: '👀', done: '✅' };
+  const STATUS_COLORS: Record<string, string> = { backlog: 'bg-gray-100 text-gray-600', todo: 'bg-blue-50 text-blue-600', in_progress: 'bg-amber-50 text-amber-600', review: 'bg-purple-50 text-purple-600', done: 'bg-green-50 text-green-600' };
+  const PRIORITY_ICONS: Record<string, string> = { urgent: '🔴', high: '🟠', medium: '🟡', low: '⚪' };
+
+  const activeTasks = tasks.filter(t => t.status !== 'done');
+  const overdueTasks = activeTasks.filter(t => t.due_date && new Date(t.due_date) < new Date());
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-gray-900">📋 My Tasks</span>
+          <span className="text-xs text-gray-500">({activeTasks.length} active{overdueTasks.length > 0 && <span className="text-red-500 ml-1">{overdueTasks.length} overdue</span>})</span>
+        </div>
+        <svg className={`w-4 h-4 text-gray-400 transition-transform ${expanded ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {expanded && (
+        <div className="border-t border-gray-100">
+          <div className="divide-y divide-gray-50">
+            {activeTasks.slice(0, 10).map(task => {
+              const isOverdue = task.due_date && new Date(task.due_date) < new Date();
+              return (
+                <div key={task.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition cursor-pointer"
+                     onClick={() => task.brand?.slug && (window.location.href = `/dashboard/brand/${task.brand.slug}/operations`)}>
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_COLORS[task.status] || 'bg-gray-100 text-gray-500'}`}>
+                    {STATUS_ICONS[task.status] || '📋'}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-gray-900 truncate">{task.title}</div>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                      {task.brand?.name && <span className="font-medium text-purple-600">{task.brand.name}</span>}
+                      <span>{PRIORITY_ICONS[task.priority] || ''} {task.priority}</span>
+                    </div>
+                  </div>
+                  {task.due_date && (
+                    <span className={`text-[10px] shrink-0 ${isOverdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
+                      {isOverdue ? '⚠️ ' : ''}{new Date(task.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {activeTasks.length > 10 && (
+              <div className="px-4 py-2 text-center text-xs text-gray-400">
+                +{activeTasks.length - 10} more tasks
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   const [view, setView] = useState<ViewMode>('master');
@@ -68,7 +150,7 @@ export default function DashboardPage() {
         ));
 
         return {
-          id: b.id, name: b.name, slug: b.slug, brand_group: b.brand_group,
+          id: b.id, name: b.name, slug: b.slug, brand_group: b.brand_group, google_sheet_id: b.google_sheet_id || null,
           tasks_total: taskList.length, tasks_overdue: overdue,
           content_count: (content.data || []).length,
           meetings_this_month: (meetings.data || []).length,
@@ -189,7 +271,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-500 text-xs sm:text-sm">TWS OS Command Center</p>
+          <p className="text-gray-500 text-xs sm:text-sm">TWS OS Command Center — <span className="font-medium text-gray-700">{new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}</span></p>
         </div>
         <div className="flex bg-gray-100 rounded-lg p-0.5 text-xs sm:text-sm">
           {([
@@ -208,6 +290,26 @@ export default function DashboardPage() {
           ))}
         </div>
       </div>
+
+      {/* Quick Actions Bar */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-medium">
+            📅 {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+          </span>
+        </div>
+        <a
+          href="/form/design-request"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 transition"
+        >
+          🎨 Design Request Form ↗
+        </a>
+      </div>
+
+      {/* My Tasks Section */}
+      <MyTasksSection />
 
       {/* ─── MASTER VIEW ─── */}
       {view === 'master' && (
@@ -249,6 +351,9 @@ export default function DashboardPage() {
                   <span>📝 {b.content_count}</span>
                   <span>📅 {b.meetings_this_month}</span>
                   <span>📊 {b.active_ads}</span>
+                  {b.google_sheet_id && (
+                    <a href={`https://docs.google.com/spreadsheets/d/${b.google_sheet_id}/edit`} target="_blank" rel="noopener noreferrer" onClick={e => { e.preventDefault(); e.stopPropagation(); window.open(`https://docs.google.com/spreadsheets/d/${b.google_sheet_id}/edit`, '_blank'); }} className="text-green-600 hover:text-green-800 font-medium">📊 Sheet ↗</a>
+                  )}
                 </div>
               </Link>
             ))}
@@ -268,6 +373,8 @@ export default function DashboardPage() {
                   <th className="text-center py-3 px-4 font-semibold text-gray-600">Meetings</th>
                   <th className="text-center py-3 px-4 font-semibold text-gray-600">Ads</th>
                   <th className="text-center py-3 px-4 font-semibold text-gray-600">KOL</th>
+                
+                  <th className="text-center py-3 px-4 font-semibold text-gray-600 w-16">Sheet</th>
                 </tr>
               </thead>
               <tbody>
@@ -287,6 +394,11 @@ export default function DashboardPage() {
                     <td className="py-3 px-4 text-center text-gray-700">{b.meetings_this_month}</td>
                     <td className="py-3 px-4 text-center text-gray-700">{b.active_ads}</td>
                     <td className="py-3 px-4 text-center text-gray-700">{b.kol_count}</td>
+                    <td className="py-3 px-4 text-center">{b.google_sheet_id ? (
+                      <a href={`https://docs.google.com/spreadsheets/d/${b.google_sheet_id}/edit`} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="inline-flex items-center gap-0.5 text-green-600 hover:text-green-800 transition" title="Open Google Sheet">
+                        📊 <span className="text-[10px]">↗</span>
+                      </a>
+                    ) : <span className="text-gray-300">—</span>}</td>
                   </tr>
                 ))}
               </tbody>
