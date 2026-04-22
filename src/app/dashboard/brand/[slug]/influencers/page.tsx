@@ -18,6 +18,8 @@ interface Invitation {
   brand_id: string;
   influencer_id: string;
   event_month: string;
+  event_date: string | null;
+  event_time: string | null;
   invited: boolean;
   confirmed: boolean;
   attended: boolean;
@@ -195,7 +197,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
       .from('influencer_invitations')
       .select('*, influencer:influencers(id, name, instagram_handle, tiktok_handle, xhs_handle, lemon8_handle, tier, followers_ig)')
       .eq('brand_id', bid)
-      .order('event_month', { ascending: false });
+      .order('event_date', { ascending: false, nullsFirst: false }).order('event_month', { ascending: false });
 
     if (month !== 'all') {
       query = query.eq('event_month', `${month}-01`);
@@ -246,6 +248,8 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
         brand_id: brandId,
         influencer_id: influencerId,
         event_month: `${inviteMonth}-01`,
+        event_date: null,
+        event_time: null,
         invited: true,
         confirmed: false,
         attended: false,
@@ -390,6 +394,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50">
                       <th className="text-left py-3 px-3 sm:px-4 text-xs font-medium text-gray-500">KOL</th>
+                      <th className="text-left py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Date</th>
                       {trackingMonth === 'all' && <th className="text-left py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Month</th>}
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Invited</th>
                       <th className="text-center py-3 px-2 sm:px-3 text-xs font-medium text-gray-500">Confirmed</th>
@@ -422,6 +427,20 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
                               </div>
                             </div>
                           </div>
+                        </td>
+                        <td className="py-3 px-2 sm:px-3">
+                          {inv.event_date ? (
+                            <div className="whitespace-nowrap">
+                              <span className="text-xs sm:text-sm text-gray-900 font-medium">
+                                {new Date(inv.event_date + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                              </span>
+                              {inv.event_time && (
+                                <span className="text-[9px] sm:text-[10px] text-gray-500 block">{inv.event_time}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] sm:text-xs text-gray-400 italic">{getInvMonthLabel(inv.event_month)}</span>
+                          )}
                         </td>
                         {trackingMonth === 'all' && (
                           <td className="py-3 px-2 sm:px-3">
