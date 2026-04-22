@@ -100,7 +100,7 @@ function l8ProfileUrl(handle: string | null): string | null {
 
 // Platform post icon component — read-only indicator, links to actual post URL (not profile)
 function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { label: string; emoji: string; posted: boolean; postUrl: string | null; profileUrl: string | null }) {
-  // If postUrl exists (regardless of posted boolean) → clickable purple linked icon
+  // Priority 1: Has actual post URL → purple, links to post
   if (postUrl) {
     return (
       <a
@@ -114,18 +114,32 @@ function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { labe
       </a>
     );
   }
-  // If posted is true but no URL → green indicator
+  // Priority 2: Posted = true AND has profile URL → green, links to profile
+  if (posted && profileUrl) {
+    return (
+      <a
+        href={profileUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={`${label}: posted — tap to view profile`}
+        className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-green-100 text-green-600 ring-1 ring-green-300 hover:bg-green-200 transition cursor-pointer"
+      >
+        {emoji}
+      </a>
+    );
+  }
+  // Priority 3: Posted = true but no URL at all → green indicator, not clickable
   if (posted) {
     return (
       <span
-        title={`${label}: posted (no link)`}
+        title={`${label}: posted (no link available)`}
         className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-green-100 text-green-600 ring-1 ring-green-300"
       >
         {emoji}
       </span>
     );
   }
-  // Neither → dim gray indicator
+  // Priority 4: Not posted → dim gray
   return (
     <span
       title={`${label}: not posted`}
@@ -354,7 +368,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             <span>🎵 TikTok</span>
             <span>📕 XHS</span>
             <span>🍋 Lemon8</span>
-            <span className="text-purple-500 ml-1">click icon = view post | ↗ = profile</span>
+            <span className="text-purple-500 ml-1">🟣 = view post | 🟢 = posted (tap for profile) | ⚪ = not posted</span>
           </div>
 
           {/* Invitations Table */}
