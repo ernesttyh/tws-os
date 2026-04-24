@@ -100,37 +100,23 @@ function l8ProfileUrl(handle: string | null): string | null {
   return clean ? `https://lemon8-app.com/${clean}` : null;
 }
 
-// Platform post icon component — read-only indicator, links to actual post URL (not profile)
-function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { label: string; emoji: string; posted: boolean; postUrl: string | null; profileUrl: string | null }) {
-  // Priority 1: Has actual post URL → purple, links to post
+// Platform post icon component — links ONLY to actual post URL, never to profile
+function PlatformPostBadge({ label, emoji, posted, postUrl }: { label: string; emoji: string; posted: boolean; postUrl: string | null; profileUrl?: string | null }) {
+  // Has actual post URL → purple, clickable → opens actual post
   if (postUrl) {
     return (
       <a
         href={postUrl}
         target="_blank"
         rel="noopener noreferrer"
-        title={`View ${label} post`}
+        title={`View ${label} post ↗`}
         className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-purple-100 text-purple-600 ring-1 ring-purple-300 hover:bg-purple-200 transition cursor-pointer"
       >
         {emoji}
       </a>
     );
   }
-  // Priority 2: Posted = true AND has profile URL → green, links to profile
-  if (posted && profileUrl) {
-    return (
-      <a
-        href={profileUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`${label}: posted — tap to view profile`}
-        className="w-5 h-5 sm:w-6 sm:h-6 rounded flex items-center justify-center text-[10px] sm:text-xs bg-green-100 text-green-600 ring-1 ring-green-300 hover:bg-green-200 transition cursor-pointer"
-      >
-        {emoji}
-      </a>
-    );
-  }
-  // Priority 3: Posted = true but no URL at all → green indicator, not clickable
+  // Posted but no URL → green indicator, NOT clickable (profile link is already on the name)
   if (posted) {
     return (
       <span
@@ -141,7 +127,7 @@ function PlatformPostBadge({ label, emoji, posted, postUrl, profileUrl }: { labe
       </span>
     );
   }
-  // Priority 4: Not posted → dim gray
+  // Not posted → dim gray
   return (
     <span
       title={`${label}: not posted`}
@@ -372,7 +358,7 @@ export default function InfluencersPage({ params }: { params: Promise<{ slug: st
             <span>🎵 TikTok</span>
             <span>📕 XHS</span>
             <span>🍋 Lemon8</span>
-            <span className="text-purple-500 ml-1">🟣 = view post | 🟢 = posted (tap for profile) | ⚪ = not posted</span>
+            <span className="text-purple-500 ml-1">🟣 = has post link ↗ | 🟢 = posted (no link) | ⚪ = not posted</span>
           </div>
 
           {/* Invitations Table */}
