@@ -281,18 +281,13 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
     return { html: result, actionItemCount: aiData.actionItems?.length || 0 };
   };
 
-  // Fallback: basic text processing when AI is unavailable
-  const processTranscriptBasic = (text: string): { html: string; actionItemCount: number } => {
-    const lines = text.split('\n').filter(l => l.trim());
-    if (lines.length === 0) return { html: '<p></p>', actionItemCount: 0 };
+  // Fallback: when AI processing fails, prompt user to retry — don't dump raw transcript
+  const processTranscriptBasic = (_text: string): { html: string; actionItemCount: number } => {
     let html = '<h2>📋 Meeting Notes</h2>';
-    html += '<p><em>AI processing unavailable. Raw transcript shown below — edit manually.</em></p>';
-    html += '<hr/><h3>💬 Transcript</h3>';
-    const displayLines = lines.slice(0, 80);
-    html += displayLines.map(l => `<p>${l.trim()}</p>`).join('');
-    if (lines.length > 80) html += `<p><em>... ${lines.length - 80} more lines ...</em></p>`;
+    html += '<p><em>⚠️ AI processing was unable to generate notes from this transcript.</em></p>';
+    html += '<p>Click <strong>Reprocess Transcript</strong> above to try again, or type your notes manually below.</p>';
     html += '<hr/><h3>📌 Action Items</h3>';
-    html += '<ul data-type="taskList"><li data-type="taskItem" data-checked="false">Review transcript and add action items manually</li></ul>';
+    html += '<ul data-type="taskList"><li data-type="taskItem" data-checked="false">Reprocess transcript or add notes manually</li></ul>';
     return { html, actionItemCount: 0 };
   };
 
@@ -859,12 +854,7 @@ export default function OperationsPage({ params }: { params: Promise<{ slug: str
             autoFocus
           />
 
-          {selectedMeeting.transcript_raw && (
-            <details className="bg-gray-50 rounded-lg border border-gray-200 p-3 sm:p-4">
-              <summary className="text-xs sm:text-sm text-gray-600 cursor-pointer hover:text-gray-900 font-medium">📝 Raw Transcript</summary>
-              <pre className="mt-3 text-xs text-gray-600 whitespace-pre-wrap bg-gray-100 rounded p-3 max-h-48 overflow-y-auto">{selectedMeeting.transcript_raw}</pre>
-            </details>
-          )}
+          {/* Raw transcript stored in DB but not displayed — users only need AI-generated notes */}
         </div>
       )}
 
